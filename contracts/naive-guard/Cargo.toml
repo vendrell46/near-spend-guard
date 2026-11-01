@@ -1,0 +1,17 @@
+[package]
+name = "naive-guard"
+description = "Demo only: a guard with the two bugs near-spend-guard avoids"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[lints]
+workspace = true

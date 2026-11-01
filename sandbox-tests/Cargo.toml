@@ -1,0 +1,14 @@
+[package]
+name = "sandbox-tests"
+description = "near-workspaces tests against the compiled contracts"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

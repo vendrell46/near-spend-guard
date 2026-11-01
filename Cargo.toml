@@ -1,0 +1,31 @@
+[workspace]
+members = [
+    "contracts/guard",
+    "contracts/naive-guard",
+    "contracts/test-token",
+    "sandbox-tests",
+]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/vendrell46/near-spend-guard"
+
+[workspace.dependencies]
+near-sdk = "=5.30.0"
+near-contract-standards = "=5.30.0"
+near-workspaces = "=0.24.0"
+
+[workspace.lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(near)"] }
+
+# Profiles only take effect in the workspace root.
+[profile.release]
+codegen-units = 1
+opt-level = "z"
+lto = true
+debug = false
+panic = "abort"
+overflow-checks = true

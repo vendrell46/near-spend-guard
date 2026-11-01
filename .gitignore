@@ -1,0 +1,5 @@
+/target
+.env*
+*.key
+neardev/
+.near-credentials/
