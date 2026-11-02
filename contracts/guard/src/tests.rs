@@ -5,17 +5,51 @@
 //! methods here never runs them. Those are sandbox tests (day 4). Every check
 //! written in a method body is tested here.
 
+use std::any::Any;
+use std::cell::{Cell, RefCell};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use near_sdk::json_types::{U64, U128};
 use near_sdk::serde_json::{self, Value, json};
 use near_sdk::test_utils::{VMContextBuilder, get_logs};
-use near_sdk::{AccountId, NearToken, testing_env};
+use near_sdk::{AccountId, NearToken, VMContext, test_vm_config, testing_env};
 
 use crate::types::*;
 use crate::*;
 
+mod payments;
+
 const HOUR_NS: u64 = 3_600_000_000_000;
+/// An hour boundary (1 Nov 2025, 13:00 UTC), so timestamps look real.
+const START_NS: u64 = 1_762_002_000 * 1_000_000_000;
+
+thread_local! {
+    /// The mocked `block_timestamp`, applied by the next `call_as`.
+    static NOW: Cell<u64> = const { Cell::new(START_NS) };
+    static VM_CONFIG: RefCell<Option<Box<dyn Any>>> = const { RefCell::new(None) };
+}
+
+/// `test_vm_config()` rebuilds nearcore's whole runtime config store on every
+/// call (about 10 ms), and the property tests make thousands of contexts, so
+/// it is built once per thread. Generic because near-sdk doesn't re-export
+/// the config's type.
+fn vm_config<T: Clone + 'static>(make: fn() -> T) -> T {
+    VM_CONFIG.with(|cell| {
+        cell.borrow_mut()
+            .get_or_insert_with(|| Box::new(make()))
+            .downcast_ref::<T>()
+            .expect("one config type")
+            .clone()
+    })
+}
+
+fn now() -> u64 {
+    NOW.with(Cell::get)
+}
+
+fn set_now(ns: u64) {
+    NOW.with(|n| n.set(ns));
+}
 const ERR_ONE_YOCTO: &str = "Requires attached deposit of exactly 1 yoctoNEAR";
 
 fn acc(id: &str) -> AccountId {
@@ -46,13 +80,16 @@ fn tst() -> Token {
 /// The next calls come from `predecessor` with `yocto` attached. Starts a
 /// fresh mocked blockchain, so the logs start empty; storage carries over.
 fn call_as(predecessor: &AccountId, yocto: u128) {
-    testing_env!(
-        VMContextBuilder::new()
-            .current_account_id(guard_id())
-            .predecessor_account_id(predecessor.clone())
-            .attached_deposit(NearToken::from_yoctonear(yocto))
-            .build()
-    );
+    testing_env!(context(predecessor, yocto), vm_config(test_vm_config));
+}
+
+fn context(predecessor: &AccountId, yocto: u128) -> VMContext {
+    VMContextBuilder::new()
+        .current_account_id(guard_id())
+        .predecessor_account_id(predecessor.clone())
+        .attached_deposit(NearToken::from_yoctonear(yocto))
+        .block_timestamp(now())
+        .build()
 }
 
 /// A guard on empty storage. Collections flush to storage when dropped, so a
@@ -606,6 +643,10 @@ fn get_token_json() {
             "token": { "ft": "tst.nsg-token.testnet" },
             "policy": { "per_payment_max": "100", "daily_max": "100", "approval_above": "50" },
             "receivers": [{ "account_id": "alice.testnet", "ft_call": false }],
+            "autonomous_spent": "0",
+            "approved_spent": "0",
+            "remaining": "100",
+            "next_release_at": null,
         })
     );
 }

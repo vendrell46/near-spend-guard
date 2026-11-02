@@ -88,6 +88,59 @@ impl TokenState {
     pub fn receiver(&self, account_id: &AccountId) -> Option<&ReceiverRule> {
         self.receivers.iter().find(|r| &r.account_id == account_id)
     }
+
+    /// Spending without a human that counts at `epoch`: the slots of `epoch`
+    /// and the 24 before it (decision 3). Every payment counts for between
+    /// 24 and 25 slot lengths.
+    pub fn window_spent(&self, epoch: u64) -> u128 {
+        self.in_window(epoch)
+            .fold(0, |sum, slot| sum.saturating_add(slot.autonomous))
+    }
+
+    /// Approved spending in the same window; not checked against
+    /// `daily_max` (decision 2).
+    pub fn window_approved(&self, epoch: u64) -> u128 {
+        self.in_window(epoch)
+            .fold(0, |sum, slot| sum.saturating_add(slot.approved))
+    }
+
+    /// The earliest slot in the window with spending that counts against the
+    /// cap; budget comes back when it leaves.
+    pub fn oldest_spent_epoch(&self, epoch: u64) -> Option<u64> {
+        self.in_window(epoch)
+            .filter(|slot| slot.autonomous > 0)
+            .map(|slot| slot.epoch)
+            .min()
+    }
+
+    /// The slot for `epoch`, emptied first if it still holds an hour that
+    /// has left the window.
+    pub fn slot_mut(&mut self, epoch: u64) -> &mut Slot {
+        let slot = &mut self.slots[slot_index(epoch)];
+        if slot.epoch != epoch {
+            *slot = Slot {
+                epoch,
+                ..Slot::default()
+            };
+        }
+        slot
+    }
+
+    /// The slot for `epoch` only if it still holds that hour.
+    pub fn slot_at(&mut self, epoch: u64) -> Option<&mut Slot> {
+        let slot = &mut self.slots[slot_index(epoch)];
+        (slot.epoch == epoch).then_some(slot)
+    }
+
+    fn in_window(&self, epoch: u64) -> impl Iterator<Item = &Slot> {
+        self.slots
+            .iter()
+            .filter(move |slot| slot.epoch <= epoch && epoch - slot.epoch < WINDOW_SLOTS as u64)
+    }
+}
+
+pub fn slot_index(epoch: u64) -> usize {
+    (epoch % WINDOW_SLOTS as u64) as usize
 }
 
 #[near(serializers = [borsh])]
@@ -165,6 +218,16 @@ pub enum RequestOutcome {
     Expired { request_id: U64 },
 }
 
+/// The `outcome` field of a `payment_settled` event.
+#[near(serializers = [json])]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Settlement {
+    Paid,
+    Failed,
+    Uncertain,
+}
+
 /// The `change` field of a `config_changed` event.
 #[near(serializers = [json])]
 #[serde(rename_all = "snake_case")]
@@ -196,13 +259,21 @@ impl From<Policy> for PolicyView {
     }
 }
 
-/// Policy and receivers; the window numbers arrive with the ledger.
+/// Policy, receivers and the rolling window at the current block.
 #[near(serializers = [json])]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenView {
     pub token: Token,
     pub policy: PolicyView,
     pub receivers: Vec<ReceiverRule>,
+    /// Counted against `daily_max`.
+    pub autonomous_spent: U128,
+    /// Approved by a human; not counted against `daily_max`.
+    pub approved_spent: U128,
+    pub remaining: U128,
+    /// When budget next comes back: the end of the oldest slot with
+    /// autonomous spending. `None` when nothing counts.
+    pub next_release_at: Option<U64>,
 }
 
 #[near(serializers = [json])]
