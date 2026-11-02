@@ -1087,6 +1087,65 @@ fn release_after_token_readded_is_noop() {
     assert_eq!(remaining(&g, tst()), 60);
 }
 
+// ---------- withdraw ----------
+
+#[test]
+fn withdraw_is_the_owners_exit() {
+    let mut g = payments_setup();
+    // Allowed while paused, for any receiver, and not counted in any cap.
+    call_as(&approver(), 0);
+    g.pause();
+    call_as(&owner(), 1);
+    drop(g.withdraw(tst(), U128(500), bob()));
+    let receipts = get_created_receipts();
+    assert_eq!(receipts.len(), 1, "no callback");
+    assert_eq!(receipts[0].receiver_id, tst_contract());
+    assert_eq!(
+        function_call(&receipts[0]),
+        (
+            "ft_transfer".to_string(),
+            json!({ "receiver_id": "bob.testnet", "amount": "500", "memo": "nsg:withdraw" }),
+            NearToken::from_yoctonear(1),
+            GAS_FT_TRANSFER,
+        )
+    );
+    assert_eq!(
+        events(),
+        vec![event(
+            "withdrawal",
+            json!({ "token": tst_json(), "amount": "500", "receiver_id": "bob.testnet" })
+        )]
+    );
+    assert_eq!(remaining(&g, tst()), 100);
+
+    // A token that isn't configured (an airdrop, or one removed) can leave
+    // too, and native NEAR is a plain transfer.
+    call_as(&owner(), 1);
+    drop(g.withdraw(Token::Ft(acc("other.testnet")), U128(1), owner()));
+    assert_eq!(get_created_receipts()[0].receiver_id, acc("other.testnet"));
+    call_as(&owner(), 1);
+    drop(g.withdraw(Token::Native, U128(7), owner()));
+    let receipts = get_created_receipts();
+    assert_eq!(receipts[0].receiver_id, owner());
+    assert!(matches!(
+        receipts[0].actions.as_slice(),
+        [MockAction::Transfer { deposit, .. }] if *deposit == NearToken::from_yoctonear(7)
+    ));
+}
+
+#[test]
+fn withdraw_refuses_zero_and_the_guard() {
+    let mut g = payments_setup();
+    call_as(&owner(), 1);
+    assert_panics(ERR_ZERO_AMOUNT, || {
+        drop(g.withdraw(tst(), U128(0), owner()));
+    });
+    assert_panics(ERR_RECEIVER_IS_GUARD, || {
+        drop(g.withdraw(Token::Native, U128(1), guard_id()));
+    });
+    assert!(get_logs().is_empty());
+}
+
 // ---------- payload hash ----------
 
 /// Vectors computed outside Rust (Python's hashlib over the byte layout in

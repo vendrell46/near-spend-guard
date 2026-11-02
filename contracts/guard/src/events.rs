@@ -67,6 +67,12 @@ pub enum GuardEvent {
     #[event_version("1.0.0")]
     RequestExpired { request_id: U64 },
     #[event_version("1.0.0")]
+    Withdrawal {
+        token: Token,
+        amount: U128,
+        receiver_id: AccountId,
+    },
+    #[event_version("1.0.0")]
     Paused { by: AccountId },
     #[event_version("1.0.0")]
     Unpaused { by: AccountId },

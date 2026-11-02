@@ -151,7 +151,7 @@ type OwnerCall = (&'static str, fn(&mut Guard));
 type EventStep = (fn(&mut Guard), AccountId, Value);
 
 /// Every owner method, with arguments that succeed on `setup()`.
-const OWNER_CALLS: [OwnerCall; 7] = [
+const OWNER_CALLS: [OwnerCall; 8] = [
     ("set_token", |g| {
         g.set_token(tst(), U128(10), U128(10), U128(5))
     }),
@@ -163,6 +163,9 @@ const OWNER_CALLS: [OwnerCall; 7] = [
     ("set_agent", |g| g.set_agent(acc("agent2.testnet"))),
     ("set_approver", |g| g.set_approver(acc("approver2.testnet"))),
     ("unpause", |g| g.unpause()),
+    ("withdraw", |g| {
+        let _ = g.withdraw(tst(), U128(1), owner());
+    }),
 ];
 
 fn snapshot(g: &Guard) -> (ConfigView, Vec<TokenView>) {

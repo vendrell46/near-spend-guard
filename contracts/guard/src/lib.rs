@@ -277,6 +277,42 @@ impl Guard {
         config_changed(ConfigChange::Approver, None, Some(approver_id));
     }
 
+    /// The owner's exit: not counted in any cap, allowed while paused, and
+    /// for any token, configured or not, so nothing can get stuck in the
+    /// guard. Returns the transfer.
+    #[payable]
+    pub fn withdraw(&mut self, token: Token, amount: U128, receiver_id: AccountId) -> Promise {
+        self.require_owner();
+        require!(amount.0 > 0, ERR_ZERO_AMOUNT);
+        require!(
+            receiver_id != env::current_account_id(),
+            ERR_RECEIVER_IS_GUARD
+        );
+        let transfer = match &token {
+            Token::Native => {
+                Promise::new(receiver_id.clone()).transfer(NearToken::from_yoctonear(amount.0))
+            }
+            Token::Ft(contract_id) => Promise::new(contract_id.clone()).function_call(
+                "ft_transfer",
+                serde_json::to_vec(&json!({
+                    "receiver_id": receiver_id,
+                    "amount": amount,
+                    "memo": "nsg:withdraw",
+                }))
+                .unwrap_or_else(|_| env::abort()),
+                NearToken::from_yoctonear(1),
+                GAS_FT_TRANSFER,
+            ),
+        };
+        GuardEvent::Withdrawal {
+            token,
+            amount,
+            receiver_id,
+        }
+        .emit();
+        transfer
+    }
+
     // ---------- kill switch ----------
 
     /// No deposit, so it works from a function-call key limited to `pause`
