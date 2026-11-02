@@ -13,6 +13,8 @@ use near_sdk::{
 
 use super::*;
 
+mod approvals;
+
 const TEN_MIN_NS: u64 = 600_000_000_000;
 const E0: u64 = START_NS / HOUR_NS;
 

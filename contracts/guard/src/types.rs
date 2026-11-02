@@ -218,6 +218,31 @@ pub enum RequestOutcome {
     Expired { request_id: U64 },
 }
 
+/// The `reason` field of a `request_rejected` event.
+#[near(serializers = [json])]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RejectionReason {
+    /// The approver or the owner called `reject`.
+    Rejected,
+    /// `set_agent` cancels every pending request (decision 12).
+    AgentChanged,
+    /// `approve` re-checked the current policy and it no longer allows the
+    /// payment. Serialised as the refusal reason itself.
+    #[serde(untagged)]
+    Policy(RefusalReason),
+}
+
+/// A pending request as `get_pending` and `get_request` show it.
+#[near(serializers = [json])]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PendingView {
+    pub payload: PaymentPayload,
+    pub payload_hash: String,
+    pub reason: PendingReason,
+    pub created_at: U64,
+}
+
 /// The `outcome` field of a `payment_settled` event.
 #[near(serializers = [json])]
 #[serde(rename_all = "snake_case")]

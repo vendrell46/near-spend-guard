@@ -5,7 +5,8 @@ use near_sdk::json_types::{U64, U128};
 use near_sdk::{AccountId, near};
 
 use crate::types::{
-    ConfigChange, Method, Mode, PaymentPayload, PendingReason, RefusalReason, Settlement, Token,
+    ConfigChange, Method, Mode, PaymentPayload, PendingReason, RefusalReason, RejectionReason,
+    Settlement, Token,
 };
 
 #[near(event_json(standard = "near-spend-guard"))]
@@ -16,7 +17,8 @@ pub enum GuardEvent {
         token: Option<Token>,
         account_id: Option<AccountId>,
     },
-    /// `window_spent` includes this payment.
+    /// `window_spent` is the autonomous spending counted against
+    /// `daily_max`, including this payment when `mode` is `autonomous`.
     #[event_version("1.0.0")]
     PaymentDispatched {
         request_id: U64,
@@ -56,6 +58,14 @@ pub enum GuardEvent {
         window_spent: U128,
         daily_max: U128,
     },
+    #[event_version("1.0.0")]
+    RequestRejected {
+        request_id: U64,
+        by: AccountId,
+        reason: RejectionReason,
+    },
+    #[event_version("1.0.0")]
+    RequestExpired { request_id: U64 },
     #[event_version("1.0.0")]
     Paused { by: AccountId },
     #[event_version("1.0.0")]

@@ -22,8 +22,8 @@ mod tests;
 use events::GuardEvent;
 use types::{
     ConfigChange, ConfigView, LimitsView, Method, Mode, PaymentPayload, PendingEntry,
-    PendingReason, Policy, ReceiverRule, RefusalReason, RequestOutcome, Settlement, Token,
-    TokenState, TokenView,
+    PendingReason, PendingView, Policy, ReceiverRule, RefusalReason, RejectionReason,
+    RequestOutcome, Settlement, Token, TokenState, TokenView,
 };
 
 pub const VERSION: &str = "1.0.0";
@@ -56,6 +56,8 @@ pub const GAS_MARGIN: Gas = Gas::from_tgas(5);
 
 pub const ERR_NOT_OWNER: &str = "only the owner can call this";
 pub const ERR_NOT_OWNER_OR_APPROVER: &str = "only the owner or the approver can call this";
+pub const ERR_NOT_APPROVER: &str = "only the approver can call this";
+pub const ERR_PAUSED: &str = "the guard is paused";
 pub const ERR_SLOT_TOO_SHORT: &str = "slot_ns must be at least 1 second (1000000000)";
 pub const ERR_AGENT_IS_OWNER: &str = "the agent cannot be the owner";
 pub const ERR_AGENT_IS_APPROVER: &str = "the agent cannot be the approver";
@@ -244,10 +246,22 @@ impl Guard {
                 .all(|state| state.receiver(&agent_id).is_none()),
             ERR_AGENT_IS_RECEIVER
         );
-        // Decision 12 lands with the pending requests themselves (day 5):
-        // every pending request is cancelled here.
         self.agent_id = agent_id.clone();
+        // An old, possibly compromised agent's requests don't outlive it
+        // (decision 12).
+        let mut cancelled: Vec<u64> = self.pending.keys().copied().collect();
+        cancelled.sort_unstable();
+        self.pending.clear();
         config_changed(ConfigChange::Agent, None, Some(agent_id));
+        let owner = env::predecessor_account_id();
+        for id in cancelled {
+            GuardEvent::RequestRejected {
+                request_id: U64(id),
+                by: owner.clone(),
+                reason: RejectionReason::AgentChanged,
+            }
+            .emit();
+        }
     }
 
     /// Pending requests stay.
@@ -318,24 +332,8 @@ impl Guard {
         let now = env::block_timestamp();
         require!(expires_at.0 > now, ERR_EXPIRED);
         require!(expires_at.0 - now <= MAX_EXPIRY_NS, ERR_EXPIRY_TOO_FAR);
-        let method = match (&token, &msg) {
-            (Token::Native, None) => Method::Native,
-            (Token::Native, Some(_)) => env::panic_str(ERR_MSG_NATIVE),
-            (Token::Ft(_), None) => Method::FtTransfer,
-            (Token::Ft(_), Some(m)) => {
-                require!(m.len() <= MAX_MSG_BYTES, ERR_MSG_TOO_LONG);
-                Method::FtTransferCall
-            }
-        };
-        // Checked before anything is reserved, so a payment can't be counted
-        // and then lose its callback for lack of gas.
-        let needed = dispatch_gas(method)
-            .saturating_add(GAS_CALLBACK)
-            .saturating_add(GAS_MARGIN);
-        require!(
-            env::prepaid_gas().saturating_sub(env::used_gas()) >= needed,
-            ERR_NOT_ENOUGH_GAS
-        );
+        let method = payment_method(&token, &msg);
+        require_dispatch_gas(method);
 
         // 2. Every request that passes the checks above gets an id.
         let request_id = self.next_request_id;
@@ -394,6 +392,114 @@ impl Guard {
             window_spent,
             policy.daily_max,
         ))
+    }
+
+    // ---------- approver ----------
+
+    /// Executes exactly the payload the approver's wallet shows. The full
+    /// payload is the argument (decision 1) and is compared field by field
+    /// with the stored one (decision 7); exactly 1 yocto forces a full-access
+    /// key and a wallet confirmation.
+    #[payable]
+    pub fn approve(&mut self, payload: PaymentPayload) -> PromiseOrValue<RequestOutcome> {
+        // 1. Deposit, then caller, as the owner methods do.
+        assert_one_yocto();
+        let approver = env::predecessor_account_id();
+        require!(approver == self.approver_id, ERR_NOT_APPROVER);
+
+        // 2. Only the stored payload executes. A mismatch keeps the entry, so
+        //    the approver can still reject it.
+        let request_id = payload.request_id;
+        let Some(entry) = self.pending.get(&request_id.0) else {
+            env::panic_str(&format!("no pending request {}", request_id.0));
+        };
+        if entry.payload != payload {
+            env::panic_str(&format!("payload does not match request {}", request_id.0));
+        }
+
+        // 3. Too late: return instead of panicking, so the removal sticks.
+        if env::block_timestamp() >= payload.expires_at.0 {
+            self.pending.remove(&request_id.0);
+            GuardEvent::RequestExpired { request_id }.emit();
+            return PromiseOrValue::Value(RequestOutcome::Expired { request_id });
+        }
+
+        // 4. Paused: nothing leaves, and the entry waits.
+        require!(!self.paused, ERR_PAUSED);
+        let method = payment_method(&payload.token, &payload.msg);
+        require_dispatch_gas(method);
+
+        // 5. The policy may have changed since the request.
+        if let Some(reason) = self.policy_refusal(&payload) {
+            self.pending.remove(&request_id.0);
+            GuardEvent::RequestRejected {
+                request_id,
+                by: approver,
+                reason: RejectionReason::Policy(reason),
+            }
+            .emit();
+            return PromiseOrValue::Value(RequestOutcome::Refused { request_id, reason });
+        }
+
+        // 6. Single use; counted as approved, not against `daily_max`
+        //    (decision 2).
+        self.pending.remove(&request_id.0);
+        let epoch = self.epoch();
+        let state = self.token_state_mut(&payload.token);
+        let slot = state.slot_mut(epoch);
+        slot.approved = checked(slot.approved.checked_add(payload.amount.0));
+        let generation = state.generation;
+        let window_spent = state.window_spent(epoch);
+        let daily_max = state.policy.daily_max;
+        PromiseOrValue::Promise(dispatch(
+            payload,
+            method,
+            Mode::Approved,
+            epoch,
+            generation,
+            window_spent,
+            daily_max,
+        ))
+    }
+
+    /// Removes a pending request. No deposit, like `pause`.
+    pub fn reject(&mut self, request_id: U64) {
+        let caller = env::predecessor_account_id();
+        require!(
+            caller == self.owner_id || caller == self.approver_id,
+            ERR_NOT_OWNER_OR_APPROVER
+        );
+        if self.pending.remove(&request_id.0).is_none() {
+            env::panic_str(&format!("no pending request {}", request_id.0));
+        }
+        GuardEvent::RequestRejected {
+            request_id,
+            by: caller,
+            reason: RejectionReason::Rejected,
+        }
+        .emit();
+    }
+
+    /// Anyone may remove expired requests, oldest id first, up to `limit`
+    /// (default 16). Returns how many were removed.
+    pub fn prune_expired(&mut self, limit: Option<u32>) -> u32 {
+        let now = env::block_timestamp();
+        let mut expired: Vec<u64> = self
+            .pending
+            .iter()
+            .filter(|(_, entry)| now >= entry.payload.expires_at.0)
+            .map(|(id, _)| *id)
+            .collect();
+        expired.sort_unstable();
+        expired.truncate(limit.unwrap_or(MAX_PENDING) as usize);
+        for &id in &expired {
+            self.pending.remove(&id);
+            GuardEvent::RequestExpired {
+                request_id: U64(id),
+            }
+            .emit();
+        }
+        expired.len() as u32
     }
 
     // ---------- callback ----------
@@ -480,6 +586,22 @@ impl Guard {
                 .daily_max
                 .saturating_sub(state.window_spent(self.epoch()))
         }))
+    }
+
+    /// Pending requests in id order.
+    pub fn get_pending(&self, from_index: Option<u32>, limit: Option<u32>) -> Vec<PendingView> {
+        let mut entries: Vec<&PendingEntry> = self.pending.values().collect();
+        entries.sort_unstable_by_key(|entry| entry.payload.request_id.0);
+        entries
+            .into_iter()
+            .skip(from_index.unwrap_or(0) as usize)
+            .take(limit.unwrap_or(MAX_PENDING) as usize)
+            .map(pending_view)
+            .collect()
+    }
+
+    pub fn get_request(&self, request_id: U64) -> Option<PendingView> {
+        self.pending.get(&request_id.0).map(pending_view)
     }
 
     /// The hash of a payload as this guard computes it, so a client can check
@@ -644,6 +766,32 @@ fn checked<T>(value: Option<T>) -> T {
     value.unwrap_or_else(|| env::panic_str(ERR_OVERFLOW))
 }
 
+/// Derived from the token and `msg`. Panics on what `request_payment` must
+/// not accept; a stored payload passed these checks already.
+fn payment_method(token: &Token, msg: &Option<String>) -> Method {
+    match (token, msg) {
+        (Token::Native, None) => Method::Native,
+        (Token::Native, Some(_)) => env::panic_str(ERR_MSG_NATIVE),
+        (Token::Ft(_), None) => Method::FtTransfer,
+        (Token::Ft(_), Some(m)) => {
+            require!(m.len() <= MAX_MSG_BYTES, ERR_MSG_TOO_LONG);
+            Method::FtTransferCall
+        }
+    }
+}
+
+/// Checked before anything is reserved, so a payment can't be counted and
+/// then lose its callback for lack of gas.
+fn require_dispatch_gas(method: Method) {
+    let needed = dispatch_gas(method)
+        .saturating_add(GAS_CALLBACK)
+        .saturating_add(GAS_MARGIN);
+    require!(
+        env::prepaid_gas().saturating_sub(env::used_gas()) >= needed,
+        ERR_NOT_ENOUGH_GAS
+    );
+}
+
 fn dispatch_gas(method: Method) -> Gas {
     match method {
         Method::Native => Gas::from_gas(0),
@@ -782,6 +930,15 @@ pub fn hash_payload(payload: &PaymentPayload) -> [u8; 32] {
     let bytes = near_sdk::borsh::to_vec(&(PAYLOAD_DOMAIN, env::current_account_id(), payload))
         .unwrap_or_else(|_| env::abort());
     env::sha256_array(bytes)
+}
+
+fn pending_view(entry: &PendingEntry) -> PendingView {
+    PendingView {
+        payload: entry.payload.clone(),
+        payload_hash: hex(&entry.payload_hash),
+        reason: entry.reason,
+        created_at: U64(entry.created_at),
+    }
 }
 
 fn hex(bytes: &[u8]) -> String {
