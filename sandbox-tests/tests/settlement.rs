@@ -159,3 +159,87 @@ async fn callback_unparseable_transfer_call_counts_as_used() -> anyhow::Result<(
     assert_eq!(remaining(&env).await?, DAILY_MAX - 25 * TST);
     Ok(())
 }
+
+#[tokio::test]
+async fn native_payment_below_storage_reserve_fails_cleanly() -> anyhow::Result<()> {
+    let env = setup().await?;
+    let near = 1_000_000_000_000_000_000_000_000u128;
+    owner_call(
+        &env,
+        "set_token",
+        json!({
+            "token": "native",
+            "per_payment_max": (100 * near).to_string(),
+            "daily_max": (100 * near).to_string(),
+            "approval_above": (100 * near).to_string(),
+        }),
+    )
+    .await?
+    .into_result()?;
+    owner_call(
+        &env,
+        "allow_receiver",
+        json!({ "token": "native", "receiver_id": env.alice.id(), "ft_call": false }),
+    )
+    .await?
+    .into_result()?;
+
+    // A payment that would leave the guard less than its storage costs. The
+    // runtime fails the whole receipt, so the reservation goes with it and
+    // nothing moves.
+    let guard = env.guard.view_account().await?;
+    let storage_cost = guard.storage_usage as u128 * 10_000_000_000_000_000_000;
+    let amount = guard.balance.as_yoctonear() - storage_cost / 2;
+    let alice_before = env.alice.view_account().await?.balance;
+    let result = env
+        .agent
+        .call(env.guard.id(), "request_payment")
+        .args_json(json!({
+            "token": "native",
+            "receiver_id": env.alice.id(),
+            "amount": amount.to_string(),
+            "msg": null,
+            "expires_at": expiry(&env).await?,
+        }))
+        .gas(AGENT_GAS)
+        .transact()
+        .await?;
+    assert!(
+        failure_text(&result).contains("LackBalanceForState"),
+        "{result:?}"
+    );
+    // The failed receipt's logs still show a dispatch that never happened:
+    // events count only from receipts that succeeded (decision 25).
+    assert!(
+        guard_events(result.logs())
+            .iter()
+            .any(|e| e["event"] == "payment_dispatched"),
+        "{:?}",
+        result.logs()
+    );
+    let native = view(&env, "get_token", json!({ "token": "native" })).await?;
+    assert_eq!(native["autonomous_spent"], "0");
+    assert_eq!(env.alice.view_account().await?.balance, alice_before);
+    assert!(env.guard.view_account().await?.balance.as_yoctonear() >= storage_cost);
+
+    // A payment the guard can afford still goes through. It gets request id
+    // 1 again: the failed receipt took the id counter back with it.
+    let small = env
+        .agent
+        .call(env.guard.id(), "request_payment")
+        .args_json(json!({
+            "token": "native",
+            "receiver_id": env.alice.id(),
+            "amount": near.to_string(),
+            "msg": null,
+            "expires_at": expiry(&env).await?,
+        }))
+        .gas(AGENT_GAS)
+        .transact()
+        .await?;
+    assert_eq!(
+        small.json::<Value>()?,
+        json!({ "status": "paid", "request_id": "1", "sent": near.to_string() })
+    );
+    Ok(())
+}

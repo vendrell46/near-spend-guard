@@ -3117,6 +3117,8 @@ name = "sandbox-tests"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "near-sdk",
+ "near-spend-guard",
  "near-workspaces",
  "serde_json",
  "tokio",
