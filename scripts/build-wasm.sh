@@ -7,7 +7,7 @@
 # cargo (for example --offline --locked).
 set -eu
 cd "$(dirname "$0")/.."
-for crate in near-spend-guard test-token; do
+for crate in near-spend-guard naive-guard test-token; do
     RUSTFLAGS="--cfg near -C link-arg=-s" \
         cargo build -p "$crate" --target wasm32-unknown-unknown --release "$@"
 done

@@ -8,9 +8,11 @@
 #![allow(dead_code)]
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::task::Poll;
+use std::time::{Duration, Instant, SystemTime};
 
 use near_workspaces::network::Sandbox;
+use near_workspaces::operations::TransactionStatus;
 use near_workspaces::result::ExecutionFinalResult;
 use near_workspaces::types::{AccessKey, Gas, KeyType, NearToken, SecretKey};
 use near_workspaces::{Account, AccountId, Contract, Worker};
@@ -89,6 +91,10 @@ pub fn guard_wasm() -> Vec<u8> {
 
 pub fn token_wasm() -> Vec<u8> {
     wasm("contracts/test-token", "test_token")
+}
+
+pub fn naive_wasm() -> Vec<u8> {
+    wasm("contracts/naive-guard", "naive_guard")
 }
 
 pub async fn subaccount(root: &Account, name: &str, near: u128) -> anyhow::Result<Account> {
@@ -317,4 +323,87 @@ pub fn guard_events(logs: Vec<&str>) -> Vec<Value> {
         .map(|json| serde_json::from_str::<Value>(json).unwrap())
         .filter(|event| event["standard"] == "near-spend-guard")
         .collect()
+}
+
+/// Gas for each request in the burst. nearcore fills a chunk until the
+/// transactions' prepaid gas would pass its 1,000 TGas limit; at the agent's
+/// usual 100 TGas only nine of ten fitted, and the tenth was never included
+/// (3 Nov: its status never resolved, and the key's next transaction skipped
+/// its nonce). 40 TGas covers what `request_payment` checks for an
+/// `ft_transfer` (25) plus its own work, and ten fit in one chunk.
+pub const BURST_GAS: Gas = Gas::from_tgas(40);
+
+/// Polls every transaction until it's final, and fails with the hash of one
+/// that isn't within 30 seconds rather than waiting on it forever. A status
+/// query for a transaction the node never includes blocks until the RPC
+/// client times out, about 50 seconds, so each query gets 3.
+pub async fn wait_all(sent: &[TransactionStatus]) -> anyhow::Result<Vec<ExecutionFinalResult>> {
+    let deadline = Instant::now() + Duration::from_secs(30);
+    let mut results = Vec::new();
+    for tx in sent {
+        let result = loop {
+            anyhow::ensure!(
+                Instant::now() < deadline,
+                "{} was never included",
+                tx.hash()
+            );
+            match tokio::time::timeout(Duration::from_secs(3), tx.status()).await {
+                Ok(Ok(Poll::Ready(result))) => break result,
+                Ok(Ok(Poll::Pending)) | Err(_) => {
+                    tokio::time::sleep(Duration::from_millis(250)).await
+                }
+                Ok(Err(e)) => return Err(e.into()),
+            }
+        };
+        results.push(result);
+    }
+    Ok(results)
+}
+
+/// The height of the block in which the guard logged `event` for this
+/// transaction.
+pub async fn height_of(
+    env: &Env,
+    result: &ExecutionFinalResult,
+    event: &str,
+) -> anyhow::Result<u64> {
+    let needle = format!("\"event\":\"{event}\"");
+    let outcome = result
+        .outcomes()
+        .into_iter()
+        .find(|o| &o.executor_id == env.guard.id() && o.logs.iter().any(|l| l.contains(&needle)))
+        .unwrap_or_else(|| panic!("no {event} in {result:?}"));
+    Ok(env
+        .worker
+        .view_block()
+        .block_hash(outcome.block_hash)
+        .await?
+        .height())
+}
+
+/// How many of a burst's requests the guard ran before the first payment's
+/// callback, with the block heights of the requests and of the callbacks:
+/// each paid request is placed by its `payment_dispatched` event, each held
+/// one by its `approval_requested`.
+pub async fn requests_before_first_callback(
+    env: &Env,
+    results: &[ExecutionFinalResult],
+) -> anyhow::Result<(usize, Vec<u64>, Vec<u64>)> {
+    let mut requested = Vec::new();
+    let mut settled = Vec::new();
+    for result in results {
+        let paid = result.clone().json::<Value>()?["status"] == "paid";
+        let event = if paid {
+            "payment_dispatched"
+        } else {
+            "approval_requested"
+        };
+        requested.push(height_of(env, result, event).await?);
+        if paid {
+            settled.push(height_of(env, result, "payment_settled").await?);
+        }
+    }
+    let first_callback = *settled.iter().min().expect("some payments");
+    let before = requested.iter().filter(|&&h| h < first_callback).count();
+    Ok((before, requested, settled))
 }

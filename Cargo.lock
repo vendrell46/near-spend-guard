@@ -1779,6 +1779,9 @@ dependencies = [
 [[package]]
 name = "naive-guard"
 version = "0.1.0"
+dependencies = [
+ "near-sdk",
+]
 
 [[package]]
 name = "native-tls"
