@@ -3,3 +3,4 @@
 *.key
 neardev/
 .near-credentials/
+node_modules/

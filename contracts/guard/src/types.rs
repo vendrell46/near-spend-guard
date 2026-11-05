@@ -188,6 +188,9 @@ pub enum RefusalReason {
     TransferCallNotAllowed,
     AbovePerPaymentMax,
     TooManyPending,
+    /// The guard's NEAR can't cover the payment or a held request's storage
+    /// on top of what it already stores (decision 26).
+    InsufficientBalance,
 }
 
 /// Returned by `request_payment` and `approve`.

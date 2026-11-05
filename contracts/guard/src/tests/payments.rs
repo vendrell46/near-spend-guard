@@ -910,6 +910,78 @@ fn native_to_missing_account_releases() {
 }
 
 #[test]
+fn native_payment_the_guard_cannot_afford_is_refused() {
+    let mut g = payments_setup();
+    set_free(2);
+    assert_eq!(
+        value(request(&mut g, Token::Native, alice(), 3, None)),
+        RequestOutcome::Refused {
+            request_id: U64(1),
+            reason: RefusalReason::InsufficientBalance,
+        }
+    );
+    assert_eq!(
+        events(),
+        vec![event(
+            "payment_refused",
+            json!({
+                "request_id": "1",
+                "reason": "insufficient_balance",
+                "token": "native",
+                "receiver_id": "alice.testnet",
+                "amount": "3",
+            })
+        )]
+    );
+    assert!(get_created_receipts().is_empty());
+    assert_eq!(remaining(&g, Token::Native), 30);
+
+    // Exactly what it can afford goes out, and is reserved.
+    set_free(3);
+    sent(request(&mut g, Token::Native, alice(), 3, None));
+    assert_eq!(remaining(&g, Token::Native), 27);
+}
+
+#[test]
+fn ft_payment_needs_one_free_yocto() {
+    let mut g = payments_setup();
+    set_free(0);
+    assert_eq!(
+        value(request(&mut g, tst(), alice(), 5, None)),
+        RequestOutcome::Refused {
+            request_id: U64(1),
+            reason: RefusalReason::InsufficientBalance,
+        }
+    );
+    assert_eq!(remaining(&g, tst()), 100);
+    set_free(1);
+    sent(request(&mut g, tst(), alice(), 5, None));
+    assert_eq!(remaining(&g, tst()), 95);
+}
+
+#[test]
+fn held_payment_needs_room_for_its_entry() {
+    let cost = u128::from(MAX_PENDING_ENTRY_BYTES) * env::storage_byte_cost().as_yoctonear();
+    let mut g = payments_setup();
+    set_free(cost - 1);
+    assert_eq!(
+        value(request(&mut g, tst(), alice(), 60, None)),
+        RequestOutcome::Refused {
+            request_id: U64(1),
+            reason: RefusalReason::InsufficientBalance,
+        }
+    );
+    assert_eq!(g.get_pending(None, None).len(), 0);
+
+    set_free(cost);
+    assert!(matches!(
+        value(request(&mut g, tst(), alice(), 60, None)),
+        RequestOutcome::Pending { .. }
+    ));
+    assert_eq!(g.get_pending(None, None).len(), 1);
+}
+
+#[test]
 fn callback_too_long_result_keeps_reservation() {
     // A valid used amount of 5, zero-padded to `len` bytes.
     let used_5 = |len: usize| {
@@ -1134,6 +1206,23 @@ fn withdraw_is_the_owners_exit() {
 }
 
 #[test]
+fn withdraw_stops_at_the_storage_cost() {
+    let mut g = payments_setup();
+    // The owner's 1 yocto is part of the balance `withdraw` sees.
+    set_free(4);
+    call_as(&owner(), 1);
+    assert_panics(ERR_CANNOT_AFFORD, || {
+        let _ = g.withdraw(Token::Native, U128(6), bob());
+    });
+    let _ = g.withdraw(Token::Native, U128(5), bob());
+
+    // An FT withdrawal takes only that same yocto.
+    set_free(0);
+    call_as(&owner(), 1);
+    let _ = g.withdraw(tst(), U128(1_000), bob());
+}
+
+#[test]
 fn withdraw_refuses_zero_and_the_guard() {
     let mut g = payments_setup();
     call_as(&owner(), 1);
@@ -1151,48 +1240,31 @@ fn withdraw_refuses_zero_and_the_guard() {
 /// Vectors computed outside Rust (Python's hashlib over the byte layout in
 /// INTERFACE.md), so the Rust encoding is checked against the spec rather
 /// than against itself. The TypeScript client checks the same three.
+#[derive(Deserialize)]
+#[serde(crate = "near_sdk::serde")]
+struct Vector {
+    name: String,
+    guard_id: AccountId,
+    payload: PaymentPayload,
+    borsh: String,
+    hash: String,
+}
+
+/// The file `client/test/payload.test.ts` checks too, so this code and the
+/// TypeScript client can't drift apart.
 #[test]
 fn payload_hash_matches_vectors() {
-    let expires_at = U64(1_762_300_800_000_000_000);
-    let vectors = [
-        (
-            PaymentPayload {
-                request_id: U64(7),
-                token: tst(),
-                receiver_id: alice(),
-                amount: U128(50_000_000),
-                msg: None,
-                expires_at,
-            },
-            "1ec1dd43aca335126c75f72732ed3f5a0c89cf2ee36c192ec3b94d2ecd7b068b",
-        ),
-        (
-            PaymentPayload {
-                request_id: U64(8),
-                token: tst(),
-                receiver_id: bob(),
-                amount: U128(1),
-                msg: Some("order:9".into()),
-                expires_at,
-            },
-            "6e8fde8b3cd756c635d55e593c5861734811e189802f97c294936546f047694a",
-        ),
-        (
-            PaymentPayload {
-                request_id: U64(9),
-                token: Token::Native,
-                receiver_id: alice(),
-                amount: U128(10u128.pow(24)),
-                msg: None,
-                expires_at,
-            },
-            "51de72ceed9873fb42f66539cef6901ab38d12f5b74b4424d2340c3615404527",
-        ),
-    ];
+    let vectors: Vec<Vector> = serde_json::from_str(include_str!("payload_vectors.json")).unwrap();
+    assert!(vectors.len() >= 10);
     let g = init();
-    for (payload, expected) in vectors {
-        assert_eq!(g.payload_hash(payload.clone()), expected);
-        assert_eq!(hex(&hash_payload(&payload)), expected);
+    for v in vectors {
+        let mut c = context(&stranger(), 0);
+        c.current_account_id = v.guard_id.clone();
+        testing_env!(c, vm_config(test_vm_config));
+        let bytes = near_sdk::borsh::to_vec(&(PAYLOAD_DOMAIN, &v.guard_id, &v.payload)).unwrap();
+        assert_eq!(hex(&bytes), v.borsh, "{}", v.name);
+        assert_eq!(hex(&hash_payload(&v.payload)), v.hash, "{}", v.name);
+        assert_eq!(g.payload_hash(v.payload), v.hash, "{}", v.name);
     }
 }
 

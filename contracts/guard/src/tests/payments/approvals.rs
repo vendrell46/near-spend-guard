@@ -335,6 +335,28 @@ fn approved_failure_releases_from_approved() {
 }
 
 #[test]
+fn approve_the_guard_cannot_afford_keeps_the_entry() {
+    let mut g = payments_setup();
+    let out = value(request(&mut g, Token::Native, alice(), 6, None));
+    let RequestOutcome::Pending { request_id, .. } = out else {
+        panic!("expected pending, got {out:?}")
+    };
+    let p = g.pending.get(&request_id.0).unwrap().payload.clone();
+
+    // The approver's 1 yocto is part of the balance `approve` sees.
+    set_free(4);
+    assert_panics(ERR_CANNOT_AFFORD, || {
+        let _ = approve(&mut g, p.clone());
+    });
+    assert_eq!(pending_ids(&g), vec![1]);
+    assert_eq!(remaining(&g, Token::Native), 30);
+
+    set_free(5);
+    sent(approve(&mut g, p));
+    assert_eq!(pending_ids(&g), Vec::<u64>::new());
+}
+
+#[test]
 fn approve_checks_gas() {
     let mut g = payments_setup();
     let p = pending(&mut g, 60);

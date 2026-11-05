@@ -24,6 +24,11 @@ pub const HOUR_NS: u64 = 3_600_000_000_000;
 /// What the agent attaches to `request_payment` (INTERFACE.md).
 pub const AGENT_GAS: Gas = Gas::from_tgas(100);
 pub const ONE_YOCTO: NearToken = NearToken::from_yoctonear(1);
+pub const NEAR: u128 = 1_000_000_000_000_000_000_000_000;
+/// What the agent attaches for each kind of payment (decision 24).
+pub const NATIVE_GAS: Gas = Gas::from_tgas(30);
+pub const FT_TRANSFER_GAS: Gas = Gas::from_tgas(40);
+pub const FT_TRANSFER_CALL_GAS: Gas = Gas::from_tgas(100);
 
 /// The demo's policy for TST (DEMO.md): at most 200 per payment, a human
 /// above 40, 100 a day without one.
@@ -285,6 +290,66 @@ pub async fn request(
         .await?)
 }
 
+/// `request` for any token, with the gas the caller chooses.
+pub async fn request_token(
+    env: &Env,
+    token: &Value,
+    receiver: &AccountId,
+    amount: u128,
+    msg: Option<&str>,
+    gas: Gas,
+) -> anyhow::Result<ExecutionFinalResult> {
+    Ok(env
+        .agent
+        .call(env.guard.id(), "request_payment")
+        .args_json(json!({
+            "token": token,
+            "receiver_id": receiver,
+            "amount": amount.to_string(),
+            "msg": msg,
+            "expires_at": expiry(env).await?,
+        }))
+        .gas(gas)
+        .transact()
+        .await?)
+}
+
+/// Native NEAR with room for any test's payments, a human above
+/// `approval_above`.
+pub async fn native_policy(env: &Env, approval_above: u128) -> anyhow::Result<()> {
+    owner_call(
+        env,
+        "set_token",
+        json!({
+            "token": "native",
+            "per_payment_max": (100 * NEAR).to_string(),
+            "daily_max": (100 * NEAR).to_string(),
+            "approval_above": approval_above.to_string(),
+        }),
+    )
+    .await?
+    .into_result()?;
+    Ok(())
+}
+
+pub async fn allow_native(env: &Env, receiver: &AccountId) -> anyhow::Result<()> {
+    owner_call(
+        env,
+        "allow_receiver",
+        json!({ "token": "native", "receiver_id": receiver, "ft_call": false }),
+    )
+    .await?
+    .into_result()?;
+    Ok(())
+}
+
+/// What the guard holds above its storage cost, as nearcore counts it.
+pub async fn free_balance(env: &Env) -> anyhow::Result<u128> {
+    let guard = env.guard.view_account().await?;
+    let storage_cost = u128::from(guard.storage_usage) * 10_000_000_000_000_000_000;
+    Ok(guard.balance.as_yoctonear() - storage_cost)
+}
+
 pub async fn view(env: &Env, method: &str, args: Value) -> anyhow::Result<Value> {
     Ok(env
         .guard
@@ -323,6 +388,33 @@ pub fn guard_events(logs: Vec<&str>) -> Vec<Value> {
         .map(|json| serde_json::from_str::<Value>(json).unwrap())
         .filter(|event| event["standard"] == "near-spend-guard")
         .collect()
+}
+
+/// Gas burnt by the receipts `executor` ran in this transaction, those whose
+/// logs contain `marker` if one is given.
+pub fn burnt(result: &ExecutionFinalResult, executor: &str, marker: Option<&str>) -> Gas {
+    let total: u64 = result
+        .receipt_outcomes()
+        .iter()
+        .filter(|o| o.executor_id.as_str() == executor)
+        .filter(|o| marker.is_none_or(|m| o.logs.iter().any(|l| l.contains(m))))
+        .map(|o| o.gas_burnt.as_gas())
+        .sum();
+    Gas::from_gas(total)
+}
+
+/// Asserts at least twice the measured gas is reserved, and prints both.
+pub fn headroom(what: &str, measured: Gas, reserved: Gas) {
+    eprintln!(
+        "{what}: {:.2} TGas burnt, {} TGas reserved",
+        measured.as_gas() as f64 / 1e12,
+        reserved.as_tgas()
+    );
+    assert!(measured.as_gas() > 0, "{what}: no receipt measured");
+    assert!(
+        measured.as_gas() * 2 <= reserved.as_gas(),
+        "{what}: {measured} burnt, under 2x headroom in {reserved}"
+    );
 }
 
 /// Gas for each request in the burst. nearcore fills a chunk until the

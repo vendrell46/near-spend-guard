@@ -1,0 +1,156 @@
+[
+  {
+    "name": "ft_transfer",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "7",
+      "token": {
+        "ft": "tst.nsg-token.testnet"
+      },
+      "receiver_id": "alice.testnet",
+      "amount": "50000000",
+      "msg": null,
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e6574070000000000000001150000007473742e6e73672d746f6b656e2e746573746e65740d000000616c6963652e746573746e657480f0fa0200000000000000000000000000000063933df37418",
+    "hash": "1ec1dd43aca335126c75f72732ed3f5a0c89cf2ee36c192ec3b94d2ecd7b068b"
+  },
+  {
+    "name": "ft_transfer_call",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "8",
+      "token": {
+        "ft": "tst.nsg-token.testnet"
+      },
+      "receiver_id": "bob.testnet",
+      "amount": "1",
+      "msg": "order:9",
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e6574080000000000000001150000007473742e6e73672d746f6b656e2e746573746e65740b000000626f622e746573746e65740100000000000000000000000000000001070000006f726465723a39000063933df37418",
+    "hash": "6e8fde8b3cd756c635d55e593c5861734811e189802f97c294936546f047694a"
+  },
+  {
+    "name": "native",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "9",
+      "token": "native",
+      "receiver_id": "alice.testnet",
+      "amount": "1000000000000000000000000",
+      "msg": null,
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e65740900000000000000000d000000616c6963652e746573746e6574000000a1edccce1bc2d300000000000000000063933df37418",
+    "hash": "51de72ceed9873fb42f66539cef6901ab38d12f5b74b4424d2340c3615404527"
+  },
+  {
+    "name": "empty msg is not no msg",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "7",
+      "token": {
+        "ft": "tst.nsg-token.testnet"
+      },
+      "receiver_id": "alice.testnet",
+      "amount": "50000000",
+      "msg": "",
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e6574070000000000000001150000007473742e6e73672d746f6b656e2e746573746e65740d000000616c6963652e746573746e657480f0fa020000000000000000000000000100000000000063933df37418",
+    "hash": "7c068b63fe971995b61bf54c722a93decb2f8a760094ff8fcae335c3d9473d36"
+  },
+  {
+    "name": "another guard",
+    "guard_id": "other-guard.testnet",
+    "payload": {
+      "request_id": "7",
+      "token": {
+        "ft": "tst.nsg-token.testnet"
+      },
+      "receiver_id": "alice.testnet",
+      "amount": "50000000",
+      "msg": null,
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f7631130000006f746865722d67756172642e746573746e6574070000000000000001150000007473742e6e73672d746f6b656e2e746573746e65740d000000616c6963652e746573746e657480f0fa0200000000000000000000000000000063933df37418",
+    "hash": "ebe3aebc49c73559774cdd81375732d7cdde92ab8324f0b2e436043ad99bb0d1"
+  },
+  {
+    "name": "largest numbers",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "18446744073709551615",
+      "token": "native",
+      "receiver_id": "alice.testnet",
+      "amount": "340282366920938463463374607431768211455",
+      "msg": null,
+      "expires_at": "18446744073709551615"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e6574ffffffffffffffff000d000000616c6963652e746573746e6574ffffffffffffffffffffffffffffffff00ffffffffffffffff",
+    "hash": "3647f99864d47abd565dbdc6e2280f9dc9c1ffe5cc8a3e0fce4186f4be63dc88"
+  },
+  {
+    "name": "longest ids",
+    "guard_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "payload": {
+      "request_id": "1",
+      "token": {
+        "ft": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      },
+      "receiver_id": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "amount": "1",
+      "msg": null,
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76314000000030313233343536373839616263646566303132333435363738396162636465663031323334353637383961626364656630313233343536373839616263646566010000000000000001400000003031323334353637383961626364656630313233343536373839616263646566303132333435363738396162636465663031323334353637383961626364656640000000303132333435363738396162636465663031323334353637383961626364656630313233343536373839616263646566303132333435363738396162636465660100000000000000000000000000000000000063933df37418",
+    "hash": "08e052abc0bf5396c6013e0eb35d9f824c13b62ed28bf67e453fa2571701e6c9"
+  },
+  {
+    "name": "multi-byte msg",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "10",
+      "token": {
+        "ft": "tst.nsg-token.testnet"
+      },
+      "receiver_id": "alice.testnet",
+      "amount": "1",
+      "msg": "café ✓ 🦀",
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e65740a0000000000000001150000007473742e6e73672d746f6b656e2e746573746e65740d000000616c6963652e746573746e657401000000000000000000000000000000010e000000636166c3a920e29c9320f09fa680000063933df37418",
+    "hash": "9eb53f7b814115482d77968c9abd0a292b3189563913f1f659628760fdaaf5fa"
+  },
+  {
+    "name": "longest msg",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "11",
+      "token": {
+        "ft": "tst.nsg-token.testnet"
+      },
+      "receiver_id": "alice.testnet",
+      "amount": "1",
+      "msg": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e65740b0000000000000001150000007473742e6e73672d746f6b656e2e746573746e65740d000000616c6963652e746573746e65740100000000000000000000000000000001000400006d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d000063933df37418",
+    "hash": "59b6bcd565de640b2315f1494efeb4f15eb1cf9c01709c0162ba1605e2c9bbf2"
+  },
+  {
+    "name": "universal account",
+    "guard_id": "guard.testnet",
+    "payload": {
+      "request_id": "12",
+      "token": "native",
+      "receiver_id": "0u0000000000000000000000000000000000000000000000000000",
+      "amount": "1",
+      "msg": null,
+      "expires_at": "1762300800000000000"
+    },
+    "borsh": "1b0000006e6561722d7370656e642d67756172642f7061796c6f61642f76310d00000067756172642e746573746e65740c0000000000000000360000003075303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030303030300100000000000000000000000000000000000063933df37418",
+    "hash": "fa5042d3dbd1e10fae51930c16cba62b738b71b892aa45d5c8823355bd469a17"
+  }
+]

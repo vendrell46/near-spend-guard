@@ -7,7 +7,6 @@
 mod common;
 
 use common::*;
-use near_workspaces::result::ExecutionFinalResult;
 use near_workspaces::types::Gas;
 use serde_json::{Value, json};
 
@@ -17,33 +16,6 @@ use serde_json::{Value, json};
 const GAS_FT_TRANSFER: Gas = Gas::from_gas(near_spend_guard::GAS_FT_TRANSFER.as_gas());
 const GAS_FT_TRANSFER_CALL: Gas = Gas::from_gas(near_spend_guard::GAS_FT_TRANSFER_CALL.as_gas());
 const GAS_CALLBACK: Gas = Gas::from_gas(near_spend_guard::GAS_CALLBACK.as_gas());
-
-/// Gas burnt by the receipts `executor` ran in this transaction, those whose
-/// logs contain `marker` if one is given.
-fn burnt(result: &ExecutionFinalResult, executor: &str, marker: Option<&str>) -> Gas {
-    let total: u64 = result
-        .receipt_outcomes()
-        .iter()
-        .filter(|o| o.executor_id.as_str() == executor)
-        .filter(|o| marker.is_none_or(|m| o.logs.iter().any(|l| l.contains(m))))
-        .map(|o| o.gas_burnt.as_gas())
-        .sum();
-    Gas::from_gas(total)
-}
-
-/// Asserts at least twice the measured gas is reserved, and prints both.
-fn headroom(what: &str, measured: Gas, reserved: Gas) {
-    eprintln!(
-        "{what}: {:.2} TGas burnt, {} TGas reserved",
-        measured.as_gas() as f64 / 1e12,
-        reserved.as_tgas()
-    );
-    assert!(measured.as_gas() > 0, "{what}: no receipt measured");
-    assert!(
-        measured.as_gas() * 2 <= reserved.as_gas(),
-        "{what}: {measured} burnt, under 2x headroom in {reserved}"
-    );
-}
 
 #[tokio::test]
 async fn callback_gas_headroom() -> anyhow::Result<()> {
@@ -104,25 +76,8 @@ async fn callback_gas_headroom() -> anyhow::Result<()> {
     assert_eq!(failed.json::<Value>()?["status"], "failed");
 
     // Native NEAR.
-    owner_call(
-        &env,
-        "set_token",
-        json!({
-            "token": "native",
-            "per_payment_max": "1000000000000000000000000",
-            "daily_max": "2000000000000000000000000",
-            "approval_above": "1000000000000000000000000",
-        }),
-    )
-    .await?
-    .into_result()?;
-    owner_call(
-        &env,
-        "allow_receiver",
-        json!({ "token": "native", "receiver_id": env.alice.id(), "ft_call": false }),
-    )
-    .await?
-    .into_result()?;
+    native_policy(&env, NEAR).await?;
+    allow_native(&env, env.alice.id()).await?;
     let native = env
         .agent
         .call(env.guard.id(), "request_payment")

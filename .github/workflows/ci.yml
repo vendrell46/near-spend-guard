@@ -26,13 +26,23 @@ jobs:
             ~/.cargo/git/db/
             target/
           key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22.22.0
       - name: Toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - name: Format
         run: cargo fmt --all --check
       - name: Unit tests
         run: cargo test --workspace --exclude sandbox-tests --locked
+      - name: Client tests
+        working-directory: client
+        run: npm test
       - name: Sandbox tests
         run: scripts/test-sandbox.sh --locked
+      # cargo hides a passing test's output; these are the lines the README
+      # quotes.
+      - name: Demo verdict lines
+        run: scripts/test-sandbox.sh --locked --test demo -- --nocapture --test-threads 1
       - name: Clippy
         run: NEAR_SANDBOX_BIN_PATH="$(scripts/sandbox-bin.sh)" cargo clippy --workspace --all-targets --locked -- -D warnings

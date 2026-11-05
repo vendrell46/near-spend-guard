@@ -22,10 +22,15 @@ mod payments;
 const HOUR_NS: u64 = 3_600_000_000_000;
 /// An hour boundary (1 Nov 2025, 13:00 UTC), so timestamps look real.
 const START_NS: u64 = 1_762_002_000 * 1_000_000_000;
+/// The mocked account's storage, a contract's worth.
+const STORAGE_BYTES: u64 = 300 * 1024;
 
 thread_local! {
     /// The mocked `block_timestamp`, applied by the next `call_as`.
     static NOW: Cell<u64> = const { Cell::new(START_NS) };
+    /// NEAR above the storage cost, applied by the next `call_as`; `None`
+    /// leaves plenty.
+    static FREE: Cell<Option<u128>> = const { Cell::new(None) };
     static VM_CONFIG: RefCell<Option<Box<dyn Any>>> = const { RefCell::new(None) };
 }
 
@@ -49,6 +54,10 @@ fn now() -> u64 {
 
 fn set_now(ns: u64) {
     NOW.with(|n| n.set(ns));
+}
+
+fn set_free(yocto: u128) {
+    FREE.with(|f| f.set(Some(yocto)));
 }
 const ERR_ONE_YOCTO: &str = "Requires attached deposit of exactly 1 yoctoNEAR";
 
@@ -84,10 +93,14 @@ fn call_as(predecessor: &AccountId, yocto: u128) {
 }
 
 fn context(predecessor: &AccountId, yocto: u128) -> VMContext {
+    let storage_cost = u128::from(STORAGE_BYTES) * env::storage_byte_cost().as_yoctonear();
+    let free = FREE.with(Cell::get).unwrap_or(100 * 10u128.pow(24));
     VMContextBuilder::new()
         .current_account_id(guard_id())
         .predecessor_account_id(predecessor.clone())
         .attached_deposit(NearToken::from_yoctonear(yocto))
+        .account_balance(NearToken::from_yoctonear(storage_cost + free))
+        .storage_usage(STORAGE_BYTES)
         .block_timestamp(now())
         .build()
 }
@@ -96,6 +109,7 @@ fn context(predecessor: &AccountId, yocto: u128) -> VMContext {
 /// guard from an earlier loop iteration would otherwise leak into this one.
 fn init() -> Guard {
     near_sdk::mock::with_mocked_blockchain(|b| b.take_storage());
+    FREE.with(|f| f.set(None));
     call_as(&guard_id(), 0);
     Guard::new(owner(), agent(), approver(), U64(HOUR_NS))
 }

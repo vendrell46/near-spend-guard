@@ -44,6 +44,10 @@ pub const MIN_SLOT_NS: u64 = 1_000_000_000;
 pub const PAYLOAD_DOMAIN: &str = "near-spend-guard/payload/v1";
 /// A transfer's result is read up to this many bytes (decision 13).
 pub const MAX_RESULT_BYTES: usize = 64;
+/// The most one pending entry adds to the guard's storage, with 64-character
+/// account ids and a `msg` of `MAX_MSG_BYTES`. `pending_entry_storage` in the
+/// sandbox tests measures it.
+pub const MAX_PENDING_ENTRY_BYTES: u64 = 1_500;
 
 pub const GAS_FT_TRANSFER: Gas = Gas::from_tgas(10);
 /// The reference token forwards what is left above its 5 TGas resolve step
@@ -80,6 +84,7 @@ pub const ERR_EXPIRY_TOO_FAR: &str = "expires_at can be at most 7 days ahead";
 pub const ERR_MSG_NATIVE: &str = "msg needs an FT token";
 pub const ERR_MSG_TOO_LONG: &str = "msg can be at most 1024 bytes";
 pub const ERR_NOT_ENOUGH_GAS: &str = "not enough gas for the transfer and its callback";
+pub const ERR_CANNOT_AFFORD: &str = "the guard cannot afford this payment and its storage";
 pub const ERR_OVERFLOW: &str = "arithmetic overflow";
 
 #[near(contract_state)]
@@ -288,6 +293,10 @@ impl Guard {
             receiver_id != env::current_account_id(),
             ERR_RECEIVER_IS_GUARD
         );
+        require!(
+            free_balance() >= transfer_deposit(&token, amount.0),
+            ERR_CANNOT_AFFORD
+        );
         let transfer = match &token {
             Token::Native => {
                 Promise::new(receiver_id.clone()).transfer(NearToken::from_yoctonear(amount.0))
@@ -412,7 +421,13 @@ impl Guard {
             return self.hold(payload, reason, spent, policy.daily_max, now);
         }
 
-        // 5. Reserve in the receipt that dispatches; only the callback can
+        // 5. Refused before reserving, so nothing is dispatched that NEAR
+        //    would fail after the guard has run (decision 26).
+        if free_balance() < transfer_deposit(&payload.token, amount.0) {
+            return refuse(payload, RefusalReason::InsufficientBalance);
+        }
+
+        // 6. Reserve in the receipt that dispatches; only the callback can
         //    give it back.
         let state = self.token_state_mut(&payload.token);
         let slot = state.slot_mut(epoch);
@@ -477,7 +492,14 @@ impl Guard {
             return PromiseOrValue::Value(RequestOutcome::Refused { request_id, reason });
         }
 
-        // 6. Single use; counted as approved, not against `daily_max`
+        // 6. Can't pay yet: nothing leaves, and the entry waits for the owner
+        //    to top the guard up (decision 26).
+        require!(
+            free_balance() >= transfer_deposit(&payload.token, payload.amount.0),
+            ERR_CANNOT_AFFORD
+        );
+
+        // 7. Single use; counted as approved, not against `daily_max`
         //    (decision 2).
         self.pending.remove(&request_id.0);
         let epoch = self.epoch();
@@ -700,6 +722,9 @@ impl Guard {
         if self.pending.len() >= MAX_PENDING {
             return refuse(payload, RefusalReason::TooManyPending);
         }
+        if free_balance() < pending_entry_cost() {
+            return refuse(payload, RefusalReason::InsufficientBalance);
+        }
         let request_id = payload.request_id;
         let payload_hash = hash_payload(&payload);
         self.pending.insert(
@@ -834,6 +859,29 @@ fn dispatch_gas(method: Method) -> Gas {
         Method::FtTransfer => GAS_FT_TRANSFER,
         Method::FtTransferCall => GAS_FT_TRANSFER_CALL,
     }
+}
+
+/// What the guard can spend and still pay for what it stores. Below that NEAR
+/// fails the whole receipt, after the guard has run (decision 26).
+fn free_balance() -> u128 {
+    let storage_cost =
+        u128::from(env::storage_usage()).saturating_mul(env::storage_byte_cost().as_yoctonear());
+    env::account_balance()
+        .as_yoctonear()
+        .saturating_sub(storage_cost)
+}
+
+/// What a transfer takes from the guard's NEAR: the amount, or the 1 yocto
+/// NEP-141 asks for.
+fn transfer_deposit(token: &Token, amount: u128) -> u128 {
+    match token {
+        Token::Native => amount,
+        Token::Ft(_) => 1,
+    }
+}
+
+fn pending_entry_cost() -> u128 {
+    u128::from(MAX_PENDING_ENTRY_BYTES).saturating_mul(env::storage_byte_cost().as_yoctonear())
 }
 
 fn refuse(payload: PaymentPayload, reason: RefusalReason) -> PromiseOrValue<RequestOutcome> {
