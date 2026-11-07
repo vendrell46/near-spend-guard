@@ -1,0 +1,6 @@
+{
+  "native": 30,
+  "ft_transfer": 40,
+  "ft_transfer_call": 100,
+  "approve": 100
+}

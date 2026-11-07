@@ -56,10 +56,14 @@ function text(value: string): Buffer {
   return Buffer.concat([u32(bytes.length), bytes]);
 }
 
-function accountId(value: string, field: string): Buffer {
+export function checkAccountId(value: string, field: string): void {
   if (value.length < 2 || value.length > 64 || !ACCOUNT_ID.test(value)) {
     throw new Error(`${field} is not a NEAR account id: ${JSON.stringify(value)}`);
   }
+}
+
+function accountId(value: string, field: string): Buffer {
+  checkAccountId(value, field);
   return text(value);
 }
 

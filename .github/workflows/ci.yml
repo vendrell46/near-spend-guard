@@ -28,7 +28,7 @@ jobs:
           key: cargo-${{ runner.os }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: 22.22.0
+          node-version: 22.22.3
       - name: Toolchain from rust-toolchain.toml
         run: rustup toolchain install
       - name: Format
@@ -40,6 +40,8 @@ jobs:
         run: npm test
       - name: Sandbox tests
         run: scripts/test-sandbox.sh --locked
+      - name: Client against the contracts
+        run: scripts/test-client.sh --locked
       # cargo hides a passing test's output; these are the lines the README
       # quotes.
       - name: Demo verdict lines
