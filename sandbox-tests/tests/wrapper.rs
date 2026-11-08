@@ -71,6 +71,40 @@ async fn new_is_private() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn token_new_is_private() -> anyhow::Result<()> {
+    let env = setup().await?;
+    let root = env.worker.root_account()?;
+    let fresh = subaccount(&root, "fresh", 20)
+        .await?
+        .deploy(&token_wasm())
+        .await?
+        .into_result()?;
+    let args = json!({ "owner_id": env.alice.id(), "total_supply": (1_000 * TST).to_string() });
+
+    // The testnet token is deployed and initialised in one transaction, but
+    // if it ever weren't, a stranger initialising it would mint the whole
+    // supply to an owner of their choice.
+    let by_stranger = env
+        .alice
+        .call(fresh.id(), "new")
+        .args_json(&args)
+        .transact()
+        .await?;
+    assert!(
+        failure_text(&by_stranger).contains("Method new is private"),
+        "{by_stranger:?}"
+    );
+
+    fresh
+        .call("new")
+        .args_json(&args)
+        .transact()
+        .await?
+        .into_result()?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn callback_is_private() -> anyhow::Result<()> {
     let env = setup().await?;
     // Spend 25 so a forged "failed" callback would have something to give

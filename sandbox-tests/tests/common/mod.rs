@@ -54,22 +54,29 @@ pub struct Env {
     pub alice: Account,
 }
 
-/// The newest contract build: `target/wasm32-unknown-unknown/release/<name>.wasm`.
+/// The newest contract build: `target/wasm32-unknown-unknown/release/<name>.wasm`,
+/// or `$NSG_WASM_DIR/<name>.wasm` when that is set (scripts/test-deployable.sh
+/// sets it to the files we deploy).
 pub fn wasm(crate_dir: &str, name: &str) -> Vec<u8> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let target = std::env::var_os("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| root.join("target"));
-    let path = target
-        .join("wasm32-unknown-unknown/release")
-        .join(format!("{name}.wasm"));
+    let (dir, script) = match std::env::var_os("NSG_WASM_DIR") {
+        Some(dir) => (PathBuf::from(dir), "scripts/build-deployable.sh"),
+        None => (
+            std::env::var_os("CARGO_TARGET_DIR")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| root.join("target"))
+                .join("wasm32-unknown-unknown/release"),
+            "scripts/build-wasm.sh",
+        ),
+    };
+    let path = dir.join(format!("{name}.wasm"));
     let built = std::fs::metadata(&path)
         .and_then(|m| m.modified())
-        .unwrap_or_else(|e| panic!("{}: {e}; run scripts/build-wasm.sh", path.display()));
+        .unwrap_or_else(|e| panic!("{}: {e}; run {script}", path.display()));
     let sources = newest(&root.join(crate_dir));
     assert!(
         built >= sources,
-        "{} is older than {crate_dir}; run scripts/build-wasm.sh",
+        "{} is older than {crate_dir}; run {script}",
         path.display()
     );
     std::fs::read(&path).unwrap()

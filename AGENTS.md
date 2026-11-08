@@ -37,11 +37,14 @@ Anything that compiles `sandbox-tests` needs the binary's path, or near-workspac
 NEAR_SANDBOX_BIN_PATH=$(scripts/sandbox-bin.sh) cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-The deployable wasm (testnet):
+The files we deploy to testnet, built with cargo-near 0.22.0 (wasm-opt, ABI embedded) into `target/deploy/` with a `SHA256SUMS`, and the sandbox tests run against exactly those files:
 
 ```bash
-cargo near build non-reproducible-wasm --manifest-path contracts/guard/Cargo.toml
+scripts/build-deployable.sh
+scripts/test-deployable.sh
 ```
+
+`scripts/test-deployable.sh` takes the same arguments as `scripts/test-sandbox.sh`; add `--test client -- --include-ignored --test-threads 1` for the client's tests. The tests read `$NSG_WASM_DIR` instead of `target/wasm32-unknown-unknown/release` when it is set. These builds aren't reproducible on another machine yet: the wasm embeds the builder's crate paths.
 
 Workspace:
 

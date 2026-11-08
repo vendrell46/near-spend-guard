@@ -1,4 +1,4 @@
-//! The NEP-141 test token (TST, 6 decimals), for the sandbox tests only.
+//! The NEP-141 test token (TST, 6 decimals), for tests and the testnet demo.
 //!
 //! Built on `near-contract-standards`, with one switch, set by the owner, that
 //! makes a transfer fail or return something unusual, so the guard's handling
@@ -67,7 +67,10 @@ pub struct TestToken {
 #[near]
 impl TestToken {
     /// Mints `total_supply` to the owner. The receiver deployment uses 0.
+    /// Private, so on testnet nobody else can initialise a freshly deployed
+    /// token and mint the supply to themselves.
     #[init]
+    #[private]
     pub fn new(owner_id: AccountId, total_supply: U128) -> Self {
         let mut token = FungibleToken::new(b"a".to_vec());
         token.internal_register_account(&owner_id);
