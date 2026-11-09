@@ -21,3 +21,9 @@ anyhow = "1"
 
 [lints]
 workspace = true
+
+# A local node that stays up, for a real MCP host (scripts/local-node.sh).
+# Its unit tests run with the sandbox tests.
+[[example]]
+name = "local_node"
+test = true
