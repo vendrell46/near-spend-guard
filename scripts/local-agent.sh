@@ -25,7 +25,7 @@ fi
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 cd "$WORK"
-claude -p "$PROMPT" \
+claude -p "$PROMPT" </dev/null \
     --mcp-config "$DIR/mcp.json" --strict-mcp-config \
     --tools "" \
     --allowedTools "mcp__near-spend-guard__pay" \

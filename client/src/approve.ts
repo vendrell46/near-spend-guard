@@ -55,7 +55,10 @@ export function parseApproverConfig(text: string): ApproverConfig {
   if (!/^[a-z0-9][a-z0-9-]*$/.test(config.network)) {
     throw new Error(`the config's network isn't a near CLI network name: ${printable(config.network)}`);
   }
-  if (config.network === "mainnet") {
+  // near CLI names mainnet connections `mainnet`, `mainnet-fastnear` and
+  // `mainnet-lava` (0.31.1's default config), so the name is checked, not
+  // matched: near CLI signs on its own connection, whatever rpc_url says.
+  if (config.network.includes("mainnet")) {
     throw new Error("near-spend-guard's client runs on testnet only");
   }
   return config;

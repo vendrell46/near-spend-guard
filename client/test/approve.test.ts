@@ -235,6 +235,9 @@ test("the config is checked before it's used", () => {
     [{ ...config, network: "" }, /no network/],
     [{ ...config, network: "--help" }, /network name/],
     [{ ...config, network: "mainnet" }, /testnet only/],
+    [{ ...config, network: "mainnet-fastnear" }, /testnet only/],
+    [{ ...config, network: "mainnet-lava" }, /testnet only/],
+    [{ ...config, network: "my-mainnet" }, /testnet only/],
     [{ ...config, rpc_url: undefined }, /no rpc_url/],
   ];
   for (const [value, message] of bad) {
