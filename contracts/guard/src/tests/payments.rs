@@ -676,11 +676,93 @@ fn seventeenth_pending_is_refused() {
             reason: RefusalReason::TooManyPending
         }
     );
+    // Nothing has expired, so nothing makes room.
+    assert_eq!(events().len(), 1);
     assert_eq!(events()[0]["event"], "payment_refused");
     assert_eq!(g.pending.len(), MAX_PENDING);
     assert!(g.pending.get(&17).is_none());
     // A payment the agent may make alone still goes through.
     sent(request(&mut g, tst(), alice(), 10, None));
+}
+
+/// Fills the pending list: ids 1 to 15 expire in ten minutes, id 16 in
+/// twenty.
+fn fill_pending_mostly_expiring(g: &mut Guard) {
+    for _ in 1..MAX_PENDING {
+        value(request(g, tst(), alice(), 60, None));
+    }
+    let later = now() + 2 * TEN_MIN_NS;
+    value(request_full(g, tst(), alice(), 60, None, later));
+    assert_eq!(g.pending.len(), MAX_PENDING);
+}
+
+fn sorted_pending_ids(g: &Guard) -> Vec<u64> {
+    let mut ids: Vec<u64> = g.pending.keys().copied().collect();
+    ids.sort_unstable();
+    ids
+}
+
+#[test]
+fn a_full_list_makes_room_from_expired_entries() {
+    // Decision 51: the agent's key can't prune, so without this a guard
+    // whose approver let 16 requests lapse would refuse every held payment.
+    let mut g = payments_setup();
+    fill_pending_mostly_expiring(&mut g);
+    // At exactly their expiry, ids 1 to 15 have expired.
+    set_now(now() + TEN_MIN_NS);
+    assert!(matches!(
+        value(request(&mut g, tst(), alice(), 60, None)),
+        RequestOutcome::Pending { request_id, .. } if request_id == U64(17)
+    ));
+    let mut expected: Vec<Value> = (1..MAX_PENDING)
+        .map(|id| event("request_expired", json!({ "request_id": id.to_string() })))
+        .collect();
+    let logged = events();
+    assert_eq!(logged.len(), expected.len() + 1);
+    assert_eq!(
+        logged[MAX_PENDING as usize - 1]["event"],
+        "approval_requested"
+    );
+    expected.push(logged[MAX_PENDING as usize - 1].clone());
+    assert_eq!(logged, expected);
+    assert_eq!(sorted_pending_ids(&g), vec![16, 17]);
+}
+
+#[test]
+fn expired_entries_stay_until_the_list_is_full() {
+    // The common path reads no other entry: a list with room keeps its
+    // expired entries for `prune_expired`.
+    let mut g = payments_setup();
+    value(request(&mut g, tst(), alice(), 60, None));
+    set_now(now() + TEN_MIN_NS);
+    value(request(&mut g, tst(), alice(), 60, None));
+    assert_eq!(events().len(), 1);
+    assert_eq!(events()[0]["event"], "approval_requested");
+    assert_eq!(sorted_pending_ids(&g), vec![1, 2]);
+}
+
+#[test]
+fn room_made_from_expired_entries_stays_when_the_request_is_refused() {
+    // The guard can't pay for the new entry's storage: the request is
+    // refused, but it returns rather than panics, so the expired entries
+    // are gone and the next request finds room.
+    let cost = u128::from(MAX_PENDING_ENTRY_BYTES) * env::storage_byte_cost().as_yoctonear();
+    let mut g = payments_setup();
+    fill_pending_mostly_expiring(&mut g);
+    set_now(now() + TEN_MIN_NS);
+    set_free(cost - 1);
+    assert_eq!(
+        value(request(&mut g, tst(), alice(), 60, None)),
+        RequestOutcome::Refused {
+            request_id: U64(17),
+            reason: RefusalReason::InsufficientBalance,
+        }
+    );
+    let logged = events();
+    assert_eq!(logged.len(), MAX_PENDING as usize);
+    assert_eq!(logged[0]["event"], "request_expired");
+    assert_eq!(logged[MAX_PENDING as usize - 1]["event"], "payment_refused");
+    assert_eq!(sorted_pending_ids(&g), vec![16]);
 }
 
 // ---------- the rolling window ----------

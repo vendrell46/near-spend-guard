@@ -264,6 +264,46 @@ async fn full_guard_stays_manageable() -> anyhow::Result<()> {
     );
     assert_eq!(pruned.json::<u32>()?, MAX_PENDING);
 
+    // The same list, left to expire, and nobody prunes it: the agent's next
+    // held payment makes room (decision 51). Native, the least gas the
+    // client attaches, on a token with 32 receivers.
+    let now = env.worker.view_block().await?.timestamp();
+    let soon = (now + 120_000_000_000).to_string();
+    fill_pending(&env, last, &long_id(0), &soon).await?;
+    while env.worker.view_block().await?.timestamp() <= now + 120_000_000_000 {
+        env.worker.fast_forward(100).await?;
+    }
+    let swept = request_token(
+        &env,
+        &json!("native"),
+        &long_id(0),
+        2 * NEAR,
+        None,
+        NATIVE_GAS,
+    )
+    .await?;
+    let expired_logs = swept
+        .logs()
+        .iter()
+        .filter(|l| l.contains("\"request_expired\""))
+        .count();
+    headroom(
+        "request_payment held after removing 16 full expired entries, 32 receivers",
+        burnt(&swept, env.guard.id().as_str(), Some("approval_requested")),
+        NATIVE_GAS,
+    );
+    let held: Value = swept.json()?;
+    assert_eq!(held["status"], "pending", "{held}");
+    assert_eq!(expired_logs, MAX_PENDING as usize);
+    let pending = view(&env, "get_pending", json!({})).await?;
+    assert_eq!(pending.as_array().unwrap().len(), 1);
+    env.approver
+        .call(env.guard.id(), "reject")
+        .args_json(json!({ "request_id": held["request_id"] }))
+        .transact()
+        .await?
+        .into_result()?;
+
     // The same list again, and the owner replaces the agent.
     fill_pending(&env, last, &long_id(0), &expiry(&env).await?).await?;
     let replaced = env

@@ -539,25 +539,10 @@ impl Guard {
     }
 
     /// Anyone may remove expired requests, oldest id first, up to `limit`
-    /// (default 16). Returns how many were removed.
+    /// (default 16). Returns how many were removed. A held request does the
+    /// same when it finds the list full (decision 51).
     pub fn prune_expired(&mut self, limit: Option<u32>) -> u32 {
-        let now = env::block_timestamp();
-        let mut expired: Vec<u64> = self
-            .pending
-            .iter()
-            .filter(|(_, entry)| now >= entry.payload.expires_at.0)
-            .map(|(id, _)| *id)
-            .collect();
-        expired.sort_unstable();
-        expired.truncate(limit.unwrap_or(MAX_PENDING) as usize);
-        for &id in &expired {
-            self.pending.remove(&id);
-            GuardEvent::RequestExpired {
-                request_id: U64(id),
-            }
-            .emit();
-        }
-        expired.len() as u32
+        self.remove_expired(env::block_timestamp(), limit.unwrap_or(MAX_PENDING))
     }
 
     // ---------- callback ----------
@@ -719,6 +704,13 @@ impl Guard {
         daily_max: u128,
         now: u64,
     ) -> PromiseOrValue<RequestOutcome> {
+        // An expired entry can never be approved, and the agent's key can't
+        // call `prune_expired`, so a full list first makes room from its
+        // expired entries (decision 51). The removals stick even if the
+        // request is then refused.
+        if self.pending.len() >= MAX_PENDING {
+            self.remove_expired(now, MAX_PENDING);
+        }
         if self.pending.len() >= MAX_PENDING {
             return refuse(payload, RefusalReason::TooManyPending);
         }
@@ -751,6 +743,27 @@ impl Guard {
             reason,
             payload_hash,
         })
+    }
+
+    /// Removes expired requests, oldest id first, up to `limit`, with a
+    /// `request_expired` event for each. Returns how many it removed.
+    fn remove_expired(&mut self, now: u64, limit: u32) -> u32 {
+        let mut expired: Vec<u64> = self
+            .pending
+            .iter()
+            .filter(|(_, entry)| now >= entry.payload.expires_at.0)
+            .map(|(id, _)| *id)
+            .collect();
+        expired.sort_unstable();
+        expired.truncate(limit as usize);
+        for &id in &expired {
+            self.pending.remove(&id);
+            GuardEvent::RequestExpired {
+                request_id: U64(id),
+            }
+            .emit();
+        }
+        expired.len() as u32
     }
 
     /// Gives back up to `amount` of one payment's reservation and returns how
