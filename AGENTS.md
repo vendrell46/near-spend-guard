@@ -2,6 +2,21 @@
 
 Rust 1.97.0 with the `wasm32-unknown-unknown` target, pinned in `rust-toolchain.toml` (rustup installs it on first use). Unit tests also need a C compiler: `near-crypto` builds `aws-lc-sys`.
 
+## The quick check, and what each command prints
+
+The same commands as the README's "Verify it in five minutes". Run them from the repo root.
+
+| Command | Prints |
+| --- | --- |
+| `cargo test --workspace --exclude sandbox-tests` | `test result: ok. 9 passed` (naive guard), `test result: ok. 109 passed` (guard), `test result: ok. 13 passed` (test token) |
+| `scripts/test-sandbox.sh --test demo race -- --nocapture` | `near-spend-guard   100 TST left, 6 waiting for a human (daily_cap)`; the naive guard's line shows more than 100 TST left the guard, a number that varies with block timing |
+| `scripts/test-sandbox.sh --test demo price_swap -- --nocapture` | `near-spend-guard   approve(payload for 50): refused, payload does not match request 1; 0 TST moved` |
+| `scripts/test-sandbox.sh --test demo approval_flow -- --nocapture` | `paid (autonomous)`, `refused (receiver_not_allowed)`, `pending (above_threshold)`, then `paid 60 TST (approved)` |
+| `scripts/test-sandbox.sh` | one `test result: ok.` line per test file, no failures |
+| `scripts/test-client.sh` | `# pass 117` and `# fail 0` for the client's own tests, then `test result: ok. 5 passed` |
+
+## Every command
+
 Unit tests, anywhere Rust runs:
 
 ```bash
@@ -62,7 +77,7 @@ The demo on testnet. `scripts/deploy-testnet.sh` builds nothing: it deploys `tar
 scripts/deploy-testnet.sh nsg
 ```
 
-Full-access keys go to `~/.near-credentials/testnet/<account>.json` (0600), near CLI's legacy keychain (`sign-with-legacy-keychain`); the agent account's full-access key, never given to the agent, is there too. `~/.config/near-spend-guard/testnet` (0700) gets the agent's function-call key in `agent.env` (0600), `mcp.json`, `world.json` and `config/near-spend-guard/approver.json`, the same files `scripts/local-node.sh` writes. So `scripts/local-agent.sh ~/.config/near-spend-guard/testnet "<prompt>"` and `XDG_CONFIG_HOME=~/.config/near-spend-guard/testnet/config node client/bin/nsg-approve.ts <request_id>` run unchanged. The world deployed on 10 Nov is `nsg`: guard `nsg-guard.testnet`, token `tst.nsg-demo.testnet`. A new build of the guard needs a new prefix: the deploy refuses to replace code an account already runs.
+Full-access keys go to `~/.near-credentials/testnet/<account>.json` (0600), near CLI's legacy keychain (`sign-with-legacy-keychain`); the agent account's full-access key, never given to the agent, is there too. `~/.config/near-spend-guard/testnet` (0700) gets the agent's function-call key in `agent.env` (0600), `mcp.json`, `world.json` and `config/near-spend-guard/approver.json`, the same files `scripts/local-node.sh` writes. So `scripts/local-agent.sh ~/.config/near-spend-guard/testnet "<prompt>"` and `XDG_CONFIG_HOME=~/.config/near-spend-guard/testnet/config node client/bin/nsg-approve.ts <request_id>` run unchanged. The world deployed on 11 Nov is `nsg2`: guard `nsg2-guard.testnet`, token `tst.nsg2-demo.testnet`, running commit `308f5cd`'s build. The 10 Nov world, `nsg`, runs the build from before the 11 Nov self-audit and stays as it was. A new build of the guard needs a new prefix: the deploy refuses to replace code an account already runs, and it writes into a directory only once, so move the old world's directory aside first.
 
 Each scene of the demo video is one command (DEMO.md). Scenes 1 and 2 are the sandbox tests `race` and `price_swap`. Scene 3 speaks MCP to `pay` as a host does, against testnet by default or a local node's directory, and fails unless the answers are paid, refused (`receiver_not_allowed`) and pending (`above_threshold`, expiring in 15 minutes):
 
