@@ -165,6 +165,98 @@ export function policyDiff(world: World, view: unknown): string[] {
   return diffs;
 }
 
+/** What scene 3 spends on testnet: 5 TST paid by the agent alone, then 60
+ * TST held for a human and approved. */
+export const SCENE3_AUTONOMOUS = 5n * TST;
+export const SCENE3_APPROVED = 60n * TST;
+/** NEAR an account needs above its storage cost for the scene's receipts: a
+ * pending entry costs the guard about 0.015, `approve` the approver about
+ * 0.01 in gas, a request the agent's key a few thousandths. */
+export const MIN_SPARE_YOCTO = 10n ** 23n;
+
+/** The testnet guard as `scripts/demo-scene.sh tidy` reads it, after pruning. */
+export interface DemoState {
+  paused: boolean;
+  /** `remaining_budget` for TST: what the agent can still move alone today. */
+  budget: bigint;
+  /** The guard's TST balance. */
+  guardTst: bigint;
+  /** The guard's NEAR above what its storage costs. */
+  guardSpare: bigint;
+  /** What's left of the gas allowance of the agent's `request_payment` key on
+   * this guard, "unlimited" for a key without one, null if there's no such key. */
+  agentAllowance: bigint | "unlimited" | null;
+  /** The approver's NEAR above what its storage costs. */
+  approverSpare: bigint;
+  /** Requests still pending. */
+  pending: string[];
+}
+
+/** NEAR's storage price: 10^19 yoctoNEAR a byte (nearcore's
+ * `storage_amount_per_byte`, unchanged since genesis on testnet). */
+export const YOCTO_PER_BYTE = 10n ** 19n;
+
+/** An account's NEAR above what its storage costs, from `view_account`. */
+export function spareYocto(view: unknown): bigint {
+  const v = view as { amount?: unknown; storage_usage?: unknown };
+  if (typeof v?.amount !== "string" || !/^\d+$/.test(v.amount) || typeof v.storage_usage !== "number") {
+    throw new Error("the RPC sent no account");
+  }
+  const spare = BigInt(v.amount) - BigInt(v.storage_usage) * YOCTO_PER_BYTE;
+  return spare > 0n ? spare : 0n;
+}
+
+/** The allowance left on the agent's key that may call `request_payment` on
+ * `guard` and nothing else, from `view_access_key_list`: "unlimited" for a key
+ * without an allowance, null if there's no such key. A key for other methods
+ * or another contract doesn't count. */
+export function agentKeyAllowance(list: unknown, guard: string): bigint | "unlimited" | null {
+  const keys = (list as { keys?: unknown })?.keys;
+  if (!Array.isArray(keys)) {
+    throw new Error("the RPC sent no key list");
+  }
+  for (const key of keys) {
+    const call = (key as { access_key?: { permission?: { FunctionCall?: Record<string, unknown> } } })
+      ?.access_key?.permission?.FunctionCall;
+    if (call === undefined || call.receiver_id !== guard) continue;
+    const methods = call.method_names;
+    if (!Array.isArray(methods) || methods.length !== 1 || methods[0] !== "request_payment") continue;
+    if (call.allowance === null || call.allowance === undefined) return "unlimited";
+    if (typeof call.allowance !== "string" || !/^\d+$/.test(call.allowance)) {
+      throw new Error("the RPC sent an allowance that isn't a number");
+    }
+    return BigInt(call.allowance);
+  }
+  return null;
+}
+
+/** Why scene 3 can't be recorded on this guard now; empty if it can. */
+export function recordingProblems(s: DemoState): string[] {
+  const problems: string[] = [];
+  if (s.paused) problems.push("the guard is paused");
+  if (s.budget < SCENE3_AUTONOMOUS) {
+    problems.push("less than 5 TST of today's budget left, so the 5 TST payment would wait for a human");
+  }
+  if (s.guardTst < SCENE3_AUTONOMOUS + SCENE3_APPROVED) {
+    problems.push("the guard holds less than 65 TST, the 5 paid plus the 60 approved");
+  }
+  if (s.guardSpare < MIN_SPARE_YOCTO) {
+    problems.push("the guard has less than 0.1 NEAR above its storage, so a held request would be refused (insufficient_balance)");
+  }
+  if (s.agentAllowance === null) {
+    problems.push("the agent has no request_payment key on this guard");
+  } else if (s.agentAllowance !== "unlimited" && s.agentAllowance < MIN_SPARE_YOCTO) {
+    problems.push("the agent's key has less than 0.1 NEAR of gas allowance left");
+  }
+  if (s.approverSpare < MIN_SPARE_YOCTO) {
+    problems.push("the approver has less than 0.1 NEAR for the approval's gas");
+  }
+  if (s.pending.length > 0) {
+    problems.push(`request${s.pending.length === 1 ? "" : "s"} ${s.pending.join(", ")} still pending: approve or reject, or wait for expiry and tidy again`);
+  }
+  return problems;
+}
+
 /** Creates a file that must not exist yet, with `mode` from the start, so a
  * secret is never readable by others, not even for a moment, and nothing
  * already there is replaced. */

@@ -13,7 +13,8 @@ The same commands as the README's "Verify it in five minutes". Run them from the
 | `scripts/test-sandbox.sh --test demo price_swap -- --nocapture` | `near-spend-guard   approve(payload for 50): refused, payload does not match request 1; 0 TST moved` |
 | `scripts/test-sandbox.sh --test demo approval_flow -- --nocapture` | `paid (autonomous)`, `refused (receiver_not_allowed)`, `pending (above_threshold)`, then `paid 60 TST (approved)` |
 | `scripts/test-sandbox.sh` | one `test result: ok.` line per test file, no failures |
-| `scripts/test-client.sh` | `# pass 117` and `# fail 0` for the client's own tests, then `test result: ok. 5 passed` |
+| `scripts/test-client.sh` | `# pass 120` and `# fail 0` for the client's own tests, `# pass 9` for the near-api-js sender's, then `test result: ok. 5 passed` |
+| `python3 -I tools/mutate.py . tools/clean /tmp/nsg-mutants/unit` | one `caught` line per weakened check, then `91 mutants; survived: none` |
 
 ## Every command
 
@@ -85,6 +86,16 @@ Each scene of the demo video is one command (DEMO.md). Scenes 1 and 2 are the sa
 scripts/demo-scene.sh 1
 scripts/demo-scene.sh 2
 scripts/demo-scene.sh 3
+```
+
+Before recording, and after rehearsals, `scripts/demo-scene.sh tidy` removes expired requests from the testnet guard (`prune_expired`, signed by the demo account, which holds no role on the guard), lists what is still pending, and checks that scene 3 can run: not paused, 5 TST of today's budget, 65 TST in the guard, 0.1 NEAR above storage for the guard and for the approver, 0.1 NEAR of gas allowance left on the agent's key, and nothing pending. It ends with `ready to record`, or with one `not ready:` line per problem and exit code 1.
+
+Mutation runners, one at a time on a clean checkout (they edit files and put them back; the third argument receives a copy of each file first). Every weakened check must make a test fail ([tools/README.md](tools/README.md)):
+
+```bash
+python3 -I tools/mutate.py . tools/clean /tmp/nsg-mutants/unit
+python3 -I tools/mutate_sandbox.py . tools/clean /tmp/nsg-mutants/sandbox
+python3 -I tools/mutate_client.py . tools/clean /tmp/nsg-mutants/client
 ```
 
 Workspace:

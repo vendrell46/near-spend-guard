@@ -1,0 +1,7 @@
+#!/bin/sh
+# Run a command with only the variables a Rust build needs, so build scripts
+# never see API keys or tokens from the caller's environment. Keeps the
+# directory of the cargo on PATH (rustup's, or a container's /usr/local/cargo).
+CARGO_BIN=$(dirname "$(command -v cargo || echo "$HOME/.cargo/bin/cargo")")
+exec env -i PATH="$CARGO_BIN:$HOME/.cargo/bin:/usr/bin:/bin" HOME="$HOME" \
+    CARGO_HOME="${CARGO_HOME:-$HOME/.cargo}" RUSTUP_HOME="${RUSTUP_HOME:-$HOME/.rustup}" "$@"

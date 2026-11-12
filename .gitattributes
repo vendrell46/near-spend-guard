@@ -1,3 +1,4 @@
 # Git for Windows would otherwise check these out with CRLF, and they run in a
 # Linux container there (scripts/test-container.sh).
 scripts/*.sh text eol=lf
+tools/clean text eol=lf

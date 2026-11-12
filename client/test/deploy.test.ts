@@ -5,8 +5,14 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 import {
+  MIN_SPARE_YOCTO,
   POLICY,
+  SCENE3_APPROVED,
+  SCENE3_AUTONOMOUS,
+  TST,
+  type DemoState,
   agentEnv,
+  agentKeyAllowance,
   allowApiArgs,
   approverJson,
   checkPrefix,
@@ -18,6 +24,8 @@ import {
   mcpJson,
   parseSha256Sums,
   policyDiff,
+  recordingProblems,
+  spareYocto,
   setTokenArgs,
   storageAccounts,
   subAccounts,
@@ -156,4 +164,77 @@ test("the files the deploy writes", () => {
   assert.equal(config.guard_id, world.guard);
   assert.equal(config.approver_id, world.approver);
   assert.equal(config.near_cli, undefined);
+});
+
+const ready: DemoState = {
+  paused: false,
+  budget: 90n * TST,
+  guardTst: 990n * TST,
+  guardSpare: 9n * 10n ** 24n,
+  agentAllowance: 99n * 10n ** 22n,
+  approverSpare: 9n * 10n ** 24n,
+  pending: [],
+};
+
+test("tidy's verdict: ready only when scene 3 can run as recorded", () => {
+  assert.equal(SCENE3_AUTONOMOUS, 5n * TST);
+  assert.equal(SCENE3_APPROVED, 60n * TST);
+  assert.equal(MIN_SPARE_YOCTO, 10n ** 23n, "0.1 NEAR, as the messages say");
+  assert.deepEqual(recordingProblems(ready), []);
+  // Exactly enough is enough.
+  assert.deepEqual(
+    recordingProblems({
+      ...ready,
+      budget: 5n * TST,
+      guardTst: 65n * TST,
+      guardSpare: MIN_SPARE_YOCTO,
+      agentAllowance: MIN_SPARE_YOCTO,
+      approverSpare: MIN_SPARE_YOCTO,
+    }),
+    [],
+  );
+  assert.deepEqual(recordingProblems({ ...ready, agentAllowance: "unlimited" }), []);
+  // One base unit short, or one thing wrong, is exactly one problem.
+  const one: Array<[Partial<DemoState>, RegExp]> = [
+    [{ paused: true }, /paused/],
+    [{ budget: 5n * TST - 1n }, /less than 5 TST of today's budget/],
+    [{ guardTst: 65n * TST - 1n }, /less than 65 TST/],
+    [{ guardSpare: MIN_SPARE_YOCTO - 1n }, /insufficient_balance/],
+    [{ agentAllowance: null }, /no request_payment key/],
+    [{ agentAllowance: MIN_SPARE_YOCTO - 1n }, /gas allowance/],
+    [{ approverSpare: MIN_SPARE_YOCTO - 1n }, /approver has less than 0.1 NEAR/],
+    [{ pending: ["7"] }, /^request 7 still pending/],
+    [{ pending: ["7", "9"] }, /^requests 7, 9 still pending/],
+  ];
+  for (const [change, why] of one) {
+    const problems = recordingProblems({ ...ready, ...change });
+    assert.equal(problems.length, 1, JSON.stringify(problems));
+    assert.match(problems[0], why);
+  }
+  assert.equal(recordingProblems({ ...ready, paused: true, pending: ["1"], budget: 0n }).length, 3);
+});
+
+test("an account's NEAR above its storage, never below zero", () => {
+  assert.equal(spareYocto({ amount: "5000000000000000000000000", storage_usage: 1000 }), 5n * 10n ** 24n - 10n ** 22n);
+  assert.equal(spareYocto({ amount: "1", storage_usage: 1000 }), 0n);
+  for (const bad of [null, {}, { amount: 5, storage_usage: 1 }, { amount: "-1", storage_usage: 1 }, { amount: "5" }]) {
+    assert.throws(() => spareYocto(bad), /no account/);
+  }
+});
+
+test("the agent's key counts only if it can call request_payment on this guard and nothing else", () => {
+  const key = (permission: unknown) => ({ public_key: "ed25519:x", access_key: { nonce: 1, permission } });
+  const call = (receiver_id: string, method_names: string[], allowance: string | null) =>
+    key({ FunctionCall: { receiver_id, method_names, allowance } });
+  const guard = world.guard;
+  assert.equal(agentKeyAllowance({ keys: [key("FullAccess"), call(guard, ["request_payment"], "123")] }, guard), 123n);
+  assert.equal(agentKeyAllowance({ keys: [call(guard, ["request_payment"], null)] }, guard), "unlimited");
+  assert.equal(agentKeyAllowance({ keys: [key("FullAccess")] }, guard), null);
+  assert.equal(agentKeyAllowance({ keys: [call("other.testnet", ["request_payment"], "1")] }, guard), null);
+  assert.equal(agentKeyAllowance({ keys: [call(guard, ["request_payment", "approve"], "1")] }, guard), null);
+  assert.equal(agentKeyAllowance({ keys: [call(guard, [], "1")] }, guard), null);
+  assert.equal(agentKeyAllowance({ keys: [call(guard, ["approve"], "1")] }, guard), null);
+  assert.equal(agentKeyAllowance({ keys: [] }, guard), null);
+  assert.throws(() => agentKeyAllowance({}, guard), /no key list/);
+  assert.throws(() => agentKeyAllowance({ keys: [call(guard, ["request_payment"], "1.5")] }, guard), /isn't a number/);
 });

@@ -4,6 +4,15 @@ An on-chain spending guard for AI agents on NEAR: caps that hold under parallel 
 
 The guard is a Rust contract that holds the funds. The agent calls it through a function-call key, and the contract enforces per-payment caps, a rolling daily cap, receiver allowlists, human approvals bound to the full payment, and a kill switch, for native NEAR and NEP-141 tokens. A small TypeScript client gives an agent one MCP tool, `pay`, and gives the human approver `nsg-approve`. Testnet only. Built at NEAR HACKATHON, 1–14 Nov 2026.
 
+## What it does, and what shows it
+
+- **Caps hold under parallel requests.** Ten payments of 25 TST sent at once against a daily cap of 100: exactly 100 leave without a human and the other six wait for one, on a real NEAR node. The same policy counting each payment only when it settles let 250 leave, in CI and locally (that number varies with block timing). (`race`, below.)
+- **A human approves one exact payment, not a request number.** `approve` carries the full payload, so the approver's wallet shows the receiver and the amount, and the guard compares it field by field with what the agent filed. If the request says 190 TST and the human approves the 50 they agreed to, the guard refuses and nothing moves. (`price_swap`.)
+- **The agent's key can only ask.** It is a function-call key for `request_payment` on the guard, which nearcore won't let attach a deposit or call anything else. The `pay` server refuses to start with a wider key, and `nsg-approve` reads the payment from the guard rather than from anything the agent prints. ([Threats](#threats-and-the-test-for-each).)
+- **Native NEAR and NEP-141 tokens**, `ft_transfer_call` with partial refunds included, and every request, approval and settlement as a NEP-297 event.
+- **Each check is tested by removing it.** The runners in [`tools/`](tools/README.md) weaken one check at a time and require a test to fail: 91 mutants against the guard's unit tests, 31 against the sandbox tests and 173 against the client's, every one caught.
+- **Running on testnet**, with the agent's transactions linked [below](#on-testnet).
+
 ## Verify it in five minutes
 
 Setup: Rust through rustup (`rust-toolchain.toml` brings 1.97.0 and the `wasm32-unknown-unknown` target on first use) and a C compiler, since near-sdk's unit-testing feature builds `aws-lc-sys`. The sandbox tests run on Linux x86_64 and Apple Silicon Macs, the systems nearcore publishes a sandbox binary for; anywhere else with Docker, `scripts/test-container.sh` runs the unit and sandbox tests in a pinned `rust:1.97.0` image. The client needs Node 22.22.2 or later and no build step. cargo-near is needed only to build the files deployed to testnet.
@@ -15,13 +24,14 @@ Setup: Rust through rustup (`rust-toolchain.toml` brings 1.97.0 and the `wasm32-
 | `scripts/test-sandbox.sh --test demo price_swap -- --nocapture` | `refused, payload does not match request 1; 0 TST moved`, and the naive guard paying 190 |
 | `scripts/test-sandbox.sh --test demo approval_flow -- --nocapture` | the small payment `paid`, 500 to mallory `refused`, the large one `pending`, then `approve` and `paid` |
 | `scripts/test-sandbox.sh` | every sandbox test, including one per row of the threats table below |
-| `scripts/test-client.sh` | the client's own tests (`# pass 117`), then `test result: ok. 5 passed`: `pay` and `nsg-approve` against the real contracts on a local node |
-| [CI](https://github.com/vendrell46/near-spend-guard/actions/workflows/ci.yml) | all of the above on Linux, with the demo's lines in the step "Demo verdict lines" |
+| `scripts/test-client.sh` | the client's own tests (`# pass 120`), the near-api-js sender's (`# pass 9`), then `test result: ok. 5 passed`: `pay` and `nsg-approve` against the real contracts on a local node |
+| `python3 -I tools/mutate.py . tools/clean /tmp/nsg-mutants/unit` | `caught` for each weakened check, then `91 mutants; survived: none` (a few minutes; the sandbox and client runners are in [`tools/`](tools/README.md)) |
+| [CI](https://github.com/vendrell46/near-spend-guard/actions/workflows/ci.yml) | all of the above but the mutation runners on Linux, with the demo's lines in the step "Demo verdict lines" |
 | [Testnet](#on-testnet) | the agent's payments, a refusal and a held payment, with their events |
 
 `scripts/test-sandbox.sh` builds the guard and the test token to wasm, downloads nearcore's sandbox 2.14.0 once and checks it against a pinned SHA-256, then runs `cargo test -p sandbox-tests`; arguments go to `cargo test`. A test stops if a wasm file is older than its contract's sources. [AGENTS.md](AGENTS.md) has every build and test command.
 
-The three demo tests, as CI printed them on 10 Nov ([run 42744640234](https://github.com/vendrell46/near-spend-guard/actions/runs/42744640234)):
+The three demo tests, as CI printed them on 11 Nov for commit `81295fd` ([run 42947234082](https://github.com/vendrell46/near-spend-guard/actions/runs/42947234082), step "Demo verdict lines"). A local run on 12 Nov printed the same lines apart from the hash:
 
 ```
 race: daily cap 100 TST, 10 payments of 25 TST sent in parallel
@@ -35,11 +45,11 @@ near-spend-guard   approve(payload for 50): refused, payload does not match requ
 approval_flow: an agent pays for an API through near-spend-guard
 pay 5 TST to api        paid (autonomous)
 pay 500 TST to mallory  refused (receiver_not_allowed)
-pay 60 TST to api       pending (above_threshold), request 3, hash c0dc4376...
+pay 60 TST to api       pending (above_threshold), request 3, hash 0e126a07...
 approve request 3       paid 60 TST (approved)
 ```
 
-The naive guard's number depends on block timing and varies between runs; its test asserts only that it is above the cap. Ours asserts exactly 100 on every run. The naive guard is [`contracts/naive-guard`](contracts/naive-guard/src/lib.rs): the same policy, allowlist and approval deposit, different in exactly the two places its header names, and not for use.
+The naive guard's number depends on block timing and varies between runs; its test asserts only that it is above the cap. Ours asserts exactly 100 on every run. The held payment's hash covers its expiry, which is set from the node's clock, so it differs on every run too. The naive guard is [`contracts/naive-guard`](contracts/naive-guard/src/lib.rs): the same policy, allowlist and approval deposit, different in exactly the two places its header names, and not for use.
 
 ## Why a contract
 
@@ -127,7 +137,7 @@ payload  {"request_id":"3","token":{"ft":"tst.nsg2-demo.testnet"},"receiver_id":
 The approver reads it from the guard with: nsg-approve 3
 ```
 
-`nsg-approve 3` read the same request from `nsg2-guard.testnet` and prepared near CLI's `contract call-function as-transaction nsg2-guard.testnet approve` with that payload as its JSON arguments, 100 Tgas and 1 yoctoNEAR, signed as `nsg2-approver.testnet`. Request 3 then expired unapproved.
+`nsg-approve 3` read the same request from `nsg2-guard.testnet` and prepared near CLI's `contract call-function as-transaction nsg2-guard.testnet approve` with that payload as its JSON arguments, 100 Tgas and 1 yoctoNEAR, signed as `nsg2-approver.testnet`. Request 3 then expired unapproved, and on 12 Nov `scripts/demo-scene.sh tidy` removed it with `prune_expired` ([FQsHac…](https://testnet.nearblocks.io/txns/FQsHacEo5rbgPSxeVNuTDWk5H7KmiJRWwke2qsBCU6u1), event `request_expired`, signed by `nsg2-demo.testnet`, which holds no role on the guard).
 
 To put a world of your own on testnet: `scripts/build-deployable.sh`, `scripts/test-deployable.sh`, then `scripts/deploy-testnet.sh <prefix>`. It uses testnet's faucet and the connection from near CLI's `config.toml`, refuses any chain but testnet, and stops if the files no longer match `SHA256SUMS`. [AGENTS.md](AGENTS.md) has the details.
 
