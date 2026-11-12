@@ -2,7 +2,7 @@
 
 An on-chain spending guard for AI agents on NEAR: caps that hold under parallel requests, and approvals that cover one exact payment.
 
-The guard is a Rust contract that holds the funds. The agent calls it through a function-call key, and the contract enforces per-payment caps, a rolling daily cap, receiver allowlists, human approvals bound to the full payment, and a kill switch, for native NEAR and NEP-141 tokens. A small TypeScript client gives an agent one MCP tool, `pay`, and gives the human approver `nsg-approve`. Testnet only. Built at NEAR HACKATHON, 1–14 Nov 2026.
+An agent that pays for APIs on its own needs access to money, and NEAR's keys alone can't say how much it may spend ([why](#why-a-contract)). The guard is a Rust contract that holds the funds. The agent calls it through a function-call key, and the contract enforces per-payment caps, a rolling daily cap, receiver allowlists, human approvals bound to the full payment, and a kill switch, for native NEAR and NEP-141 tokens. A small TypeScript client gives an agent one MCP tool, `pay`, and gives the human approver `nsg-approve`. Testnet only. Built at NEAR HACKATHON, 1–14 Nov 2026.
 
 ## What it does, and what shows it
 
@@ -54,6 +54,16 @@ The naive guard's number depends on block timing and varies between runs; its te
 ## Why a contract
 
 NEAR's own keys can't express a spending limit. A function-call key's allowance limits gas, not value, and nearcore rejects any function call that a function-call key signs with a deposit above zero (`DepositWithFunctionCall`). NEP-141 transfers need exactly 1 yoctoNEAR attached, so a function-call key can't move tokens at all, and a full-access key can do everything. The limit therefore has to live in a contract that holds the funds. The agent gets a function-call key on its own account that can call `request_payment` on the guard and nothing else, and the guard decides.
+
+## What it uses from NEAR
+
+- **Function-call access keys.** The agent's only key is limited to `request_payment` on the guard. nearcore refuses any deposit signed with it, so the agent can ask but can't pay.
+- **Receipts and callbacks.** The reservation and the transfer go out from one receipt, and a `#[private]` callback settles it. Receipts on the guard run one after another, which is what keeps the caps exact under a burst.
+- **NEP-141 tokens.** `ft_transfer`, and `ft_transfer_call` with partial refunds; the guard attaches the 1 yoctoNEAR each one needs. The test token is built on `near-contract-standards`.
+- **Full-access keys and 1 yoctoNEAR on `approve`.** Only a full-access key can attach a deposit, so an approval is signed with the approver's own key, in near CLI or a wallet that shows the payload before signing.
+- **NEP-297 events.** Every request, approval, refusal, settlement and configuration change is an `EVENT_JSON` log, standard `near-spend-guard`.
+- **Storage staking.** The guard checks that it can still pay for its own storage before it reserves or sends anything, and refuses with `insufficient_balance` when it can't.
+- **Tooling.** near-sdk 5.30.0 for the contracts, near-workspaces 0.24.0 with nearcore's sandbox 2.14.0 for tests on a real node, cargo-near 0.22.0 for the deployed files, near-api-js 7.4.0 for the client, near CLI for the approver's signature, and testnet for the demo.
 
 ## How it works
 
@@ -173,6 +183,13 @@ What was checked and left as it is:
 - **Storage.** Every check reads the guard's balance before the receipt's own writes, against what that receipt adds: a pending entry (1,500 bytes allowed, 1,369 measured), the amount for a native payment, or 1 yocto for a token transfer. Dispatch adds no storage, and the callback only rewrites or shrinks.
 - **Callbacks.** The callback reads the transfer's result bounded to 64 bytes and can't panic on it; out of gas, the reservation stays spent.
 - **Between a payment and its callback.** Another request reserves first and sees this one; `approve` counts separately; removing and re-adding a token makes the late callback a no-op; a `withdraw` of tokens in flight makes the transfer fail, and the release is right. An allowlisted contract called through `ft_transfer_call` finds only views, `prune_expired` and methods that check their caller.
+
+## Libraries, templates and AI use
+
+- **Libraries.** `near-sdk` 5.30.0 is the only dependency of the guard and the naive guard. The test token adds `near-contract-standards` 5.30.0 for NEP-141. The sandbox tests use `near-workspaces` 0.24.0, `tokio`, `serde_json` and `anyhow`. The client's only npm dependency is `near-api-js` 7.4.0, loaded only by `client/src/near.ts`; its MCP server is plain JSON-RPC over stdio, with no MCP SDK.
+- **Templates.** None. The crates and manifests were written by hand, not generated with `cargo near new`.
+- **AI-generated code.** The code, tests and documentation were written with an AI coding agent (Claude Code), working from a design and an interface spec that the author approved before the build started.
+- **When.** All of it during NEAR HACKATHON; the first commit is from 1 Nov 2026.
 
 ## Licence
 
