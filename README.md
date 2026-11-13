@@ -176,7 +176,6 @@ The main ones, all of them in [docs/security-model.md](docs/security-model.md#li
 - **Libraries.** `near-sdk` 5.30.0 is the only dependency of the guard and the naive guard. The test token adds `near-contract-standards` 5.30.0 for NEP-141. The sandbox tests use `near-workspaces` 0.24.0, `tokio`, `serde_json` and `anyhow`. The client's only npm dependency is `near-api-js` 7.4.0; in `client/src` only `near.ts` loads it, and the testnet scripts in `client/deploy` use it too. Its MCP server is plain JSON-RPC over stdio, with no MCP SDK.
 - **Templates.** None. The crates and manifests were written by hand, not generated with `cargo near new`.
 - **AI-generated code.** The code, tests and documentation were written with an AI coding agent (Claude Code), working from a design and an interface spec that the author approved before the build started.
-- **Narration.** The demo video's voice-over is synthetic: generated with ElevenLabs from a clone of the author's own voice.
 - **When.** All of it during NEAR HACKATHON; the first commit is from 1 Nov 2026.
 
 ## Licence
