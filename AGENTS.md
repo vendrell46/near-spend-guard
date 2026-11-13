@@ -62,7 +62,7 @@ scripts/test-deployable.sh
 
 `scripts/test-deployable.sh` takes the same arguments as `scripts/test-sandbox.sh`; add `--test client -- --include-ignored --test-threads 1` for the client's tests. The tests read `$NSG_WASM_DIR` instead of `target/wasm32-unknown-unknown/release` when it is set. These builds aren't reproducible on another machine yet: the wasm embeds the builder's crate paths.
 
-A real agent on a local node, with no testnet: one terminal keeps a node up with the demo's accounts (`guard`, `tst`, `api` and `bob` allowed, `mallory` registered but not allowed; DEMO.md), another runs Claude Code as the MCP host with `pay` as its only tool:
+A real agent on a local node, with no testnet: one terminal keeps a node up with the demo's accounts (`guard`, `tst`, `api` and `bob` allowed, `mallory` registered but not allowed; [docs/demo.md](docs/demo.md)), another runs Claude Code as the MCP host with `pay` as its only tool:
 
 ```bash
 scripts/local-node.sh /tmp/nsg-local
@@ -80,7 +80,7 @@ scripts/deploy-testnet.sh nsg
 
 Full-access keys go to `~/.near-credentials/testnet/<account>.json` (0600), near CLI's legacy keychain (`sign-with-legacy-keychain`); the agent account's full-access key, never given to the agent, is there too. `~/.config/near-spend-guard/testnet` (0700) gets the agent's function-call key in `agent.env` (0600), `mcp.json`, `world.json` and `config/near-spend-guard/approver.json`, the same files `scripts/local-node.sh` writes. So `scripts/local-agent.sh ~/.config/near-spend-guard/testnet "<prompt>"` and `XDG_CONFIG_HOME=~/.config/near-spend-guard/testnet/config node client/bin/nsg-approve.ts <request_id>` run unchanged. The world deployed on 11 Nov is `nsg2`: guard `nsg2-guard.testnet`, token `tst.nsg2-demo.testnet`, running commit `308f5cd`'s build. The 10 Nov world, `nsg`, runs the build from before the 11 Nov self-audit and stays as it was. A new build of the guard needs a new prefix: the deploy refuses to replace code an account already runs, and it writes into a directory only once, so move the old world's directory aside first.
 
-Each scene of the demo video is one command (DEMO.md). Scenes 1 and 2 are the sandbox tests `race` and `price_swap`. Scene 3 speaks MCP to `pay` as a host does, against testnet by default or a local node's directory, and fails unless the answers are paid, refused (`receiver_not_allowed`) and pending (`above_threshold`, expiring in 15 minutes):
+Each scene of the demo video is one command ([docs/demo.md](docs/demo.md)). Scenes 1 and 2 are the sandbox tests `race` and `price_swap`. Scene 3 speaks MCP to `pay` as a host does, against testnet by default or a local node's directory, and fails unless the answers are paid, refused (`receiver_not_allowed`) and pending (`above_threshold`, expiring in 15 minutes):
 
 ```bash
 scripts/demo-scene.sh 1
