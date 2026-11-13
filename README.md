@@ -2,7 +2,7 @@
 
 An on-chain spending guard for AI agents on NEAR: caps that hold under parallel requests, and approvals that cover one exact payment.
 
-Demo video: <!-- DEMO_VIDEO_LINK -->
+Demo video: [the post on X](https://x.com/TheBlockChainer/status/2121330357350142457)
 
 Testnet only. Built at NEAR HACKATHON, 1–14 Nov 2026.
 
