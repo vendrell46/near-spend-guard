@@ -195,23 +195,18 @@ async fn left_during<F: Future<Output = anyhow::Result<T>>, T>(
     Ok((before - balance(&demo.env, guard).await?, out))
 }
 
-#[tokio::test]
-async fn race() -> anyhow::Result<()> {
+/// One race on fresh contracts: what left the naive guard, what left ours, how
+/// many of our requests wait for a human, and how many of our requests ran
+/// before the first callback.
+async fn race_once() -> anyhow::Result<(u128, u128, usize, usize)> {
     let demo = demo_setup().await?;
     let guard = demo.env.guard.id();
-    say("race: daily cap 100 TST, 10 payments of 25 TST sent in parallel");
-
     let (naive_left, _) = left_during(
         &demo,
         demo.naive.id(),
         burst(&demo, demo.naive.id(), &demo.naive_agent),
     )
     .await?;
-    say(&format!(
-        "naive guard        {} TST left (cap 100)",
-        tst(naive_left)
-    ));
-
     let (ours_left, results) =
         left_during(&demo, guard, burst(&demo, guard, &demo.env.agent)).await?;
     let (parallel, _, _) = requests_before_first_callback(&demo.env, &results).await?;
@@ -220,24 +215,46 @@ async fn race() -> anyhow::Result<()> {
         .map(|r| r.json::<Value>().unwrap())
         .filter(|v| v["status"] == "pending" && v["reason"] == "daily_cap")
         .count();
-    say(&format!(
-        "near-spend-guard   {} TST left, {waiting} waiting for a human (daily_cap)",
-        tst(ours_left)
-    ));
+    Ok((naive_left, ours_left, waiting, parallel))
+}
 
-    // The naive number depends on block timing, so only "more than the cap"
-    // is asserted; ours is exact on every run.
-    assert!(
-        naive_left > DAILY_MAX,
-        "the naive guard let only {} TST leave; the burst wasn't parallel",
-        tst(naive_left)
-    );
-    assert_eq!((ours_left, waiting), (DAILY_MAX, 6));
-    assert!(
-        parallel >= 5,
-        "only {parallel} of our requests ran before the first callback"
-    );
-    Ok(())
+/// Attempts at a burst that is really parallel. On a busy machine the first
+/// callback can land before five of our requests ran, often several runs in a
+/// row; such a run didn't test concurrency, so it is repeated on fresh
+/// contracts rather than counted. Each attempt sets up from scratch (about 30
+/// seconds), which also spaces them out.
+const RACE_ATTEMPTS: usize = 5;
+
+#[tokio::test]
+async fn race() -> anyhow::Result<()> {
+    say("race: daily cap 100 TST, 10 payments of 25 TST sent in parallel");
+    for attempt in 1..=RACE_ATTEMPTS {
+        let (naive_left, ours_left, waiting, parallel) = race_once().await?;
+        // Ours is exact on every attempt, parallel or not.
+        assert_eq!(
+            (ours_left, waiting),
+            (DAILY_MAX, 6),
+            "attempt {attempt}: our guard let {} TST leave",
+            tst(ours_left)
+        );
+        // The naive number depends on block timing, so only "more than the
+        // cap" is required, and only of a burst that really was parallel.
+        if parallel >= 5 && naive_left > DAILY_MAX {
+            say(&format!(
+                "naive guard        {} TST left (cap 100)",
+                tst(naive_left)
+            ));
+            say(&format!(
+                "near-spend-guard   {} TST left, {waiting} waiting for a human (daily_cap)",
+                tst(ours_left)
+            ));
+            return Ok(());
+        }
+        eprintln!(
+            "race: attempt {attempt} wasn't parallel ({parallel} of 10 before the first callback); rerunning"
+        );
+    }
+    anyhow::bail!("no parallel burst in {RACE_ATTEMPTS} attempts")
 }
 
 #[tokio::test]
