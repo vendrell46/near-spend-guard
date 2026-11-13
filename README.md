@@ -35,15 +35,15 @@ The guard is a Rust contract, [`contracts/guard`](contracts/guard/src/lib.rs). A
 
 ## The demo
 
-On testnet, Claude Code runs with one MCP tool, `pay`, and no shell, files or web.
+The agent's side is one MCP tool, `pay`, served by `nsg-pay-mcp`. Any MCP host can call it. On testnet, Claude Code ran with `pay` as its only tool (no shell, files or web) and paid a 5 TST invoice; the transaction is [below](#on-testnet).
 
-- It pays a 5 TST invoice on its own: `paid`.
-- It is asked to pay 500 TST to mallory, who is not on the allowlist: `refused (receiver_not_allowed)`. Nothing is sent or reserved.
-- A 60 TST payment is above the approval threshold of 40: `pending`. It waits for a human.
+The demo video's scene is `scripts/demo-scene.sh 3`: a client that makes the same MCP calls a host makes, without a model, against the testnet guard.
 
-The approver runs `nsg-approve <id>`. It reads the request from the guard, not from anything the agent printed, and starts near CLI, which shows the unsigned transaction in full. The approver signs, and the guard pays.
+- 5 TST to the API provider is within the limits: `paid`.
+- 500 TST to mallory, who is not on the allowlist: `refused (receiver_not_allowed)`. Nothing is sent or reserved.
+- 60 TST is above the approval threshold of 40: `pending`. It waits for a human.
 
-The testnet transactions are [below](#on-testnet); there, the refusal and the held payment were made by `scripts/demo-scene.sh 3`, which plays the same calls without a model. Each scene is one command, and the same flow runs on a local node with no testnet: [docs/demo.md](docs/demo.md).
+The approver runs `nsg-approve <id>`. It reads the request from the guard, not from anything the agent printed, and starts near CLI, which shows the unsigned transaction in full. The approver signs, and the guard pays. The run in the video is requests 17 to 19 in the [testnet table](#on-testnet). Each scene is one command, and the same flow runs on a local node with no testnet: [docs/demo.md](docs/demo.md).
 
 ## Why the limits hold
 
@@ -143,6 +143,10 @@ The guard [`nsg2-guard.testnet`](https://testnet.nearblocks.io/address/nsg2-guar
 | `scripts/demo-scene.sh 3` | 500 TST to `mallory` | `refused (receiver_not_allowed): nothing was sent or reserved (request 2)` | [BXNf86…](https://testnet.nearblocks.io/txns/BXNf86xp9J6wfBYjoHWzZ7xXZJZcJ8V7CzP2knHo3wuj) |
 | `scripts/demo-scene.sh 3` | 60 TST to `api` | `pending (above_threshold): request 3 waits for a human` | [8EdP8g…](https://testnet.nearblocks.io/txns/8EdP8g1o7Ju1wb3EbBW4oqKxEPPci2Zr35r7wBXALT9c) |
 | Claude Code, `pay` its only tool | "Pay the 5 TST invoice for 1,000 API calls: 5 TST to api.nsg2-demo.testnet, TST is the token at tst.nsg2-demo.testnet." | `paid: 5 TST to api.nsg2-demo.testnet (request 4)` | [2S2rf7…](https://testnet.nearblocks.io/txns/2S2rf7tHgVK5bXzfdEizUfVjBAMtTR8cMge52hsbnYK9) |
+| `scripts/demo-scene.sh 3` | 5 TST to `api` | `paid: 5 TST to api.nsg2-demo.testnet (request 17)` | [3rEaFw…](https://testnet.nearblocks.io/txns/3rEaFwYTqshW5DBqZ72Nx8uF6abypmKa38sZPjcYm16h) |
+| `scripts/demo-scene.sh 3` | 500 TST to `mallory` | `refused (receiver_not_allowed): nothing was sent or reserved (request 18)` | [E5MvV8…](https://testnet.nearblocks.io/txns/E5MvV8N1atf819YFb9sk43EDupJixSHBZoFBcBtbvCBT) |
+| `scripts/demo-scene.sh 3` | 60 TST to `api` | `pending (above_threshold): request 19 waits for a human` | [Hrzgoq…](https://testnet.nearblocks.io/txns/HrzgoqTScb36iMcKPmFs5H8KYSZBPBJmkQbdZ3bK9nED) |
+| The approver, `nsg-approve 19` then near CLI | approve request 19 with its full payload | the guard returned `{"status":"paid","request_id":"19","sent":"60000000"}` | [CDKUaW…](https://testnet.nearblocks.io/txns/CDKUaWgH2gWLR5WjAxf3mrecgwinXNJx1iezVpGEGdnz) |
 
 The code hash on chain, the events in each transaction, the held request in full, and what `nsg-approve` prepared for it are in [docs/demo.md](docs/demo.md#on-testnet). To put a world of your own on testnet: `scripts/build-deployable.sh`, `scripts/test-deployable.sh`, then `scripts/deploy-testnet.sh <prefix>` ([docs/deploy.md](docs/deploy.md)).
 

@@ -53,9 +53,9 @@ The naive guard's `approve` takes a request number, so the approver signs `1` an
 
 ## Scene 3: an agent pays for an API
 
-On testnet, Claude Code has one MCP tool, `pay`. It pays a 5 TST invoice on its own. It is refused 500 TST to mallory, who is not on the allowlist, and nothing is sent or reserved. A 60 TST payment, above the approval threshold, waits for a human. The approver runs `nsg-approve <id>`, near CLI shows the unsigned transaction in full, and once they sign, the guard pays.
+The agent's side is one MCP tool, `pay`. A 5 TST invoice is paid on its own. 500 TST to mallory, who is not on the allowlist, is refused, and nothing is sent or reserved. A 60 TST payment, above the approval threshold, waits for a human. The approver runs `nsg-approve <id>`, near CLI shows the unsigned transaction in full, and once they sign, the guard pays.
 
-`scripts/demo-scene.sh 3` plays the same three calls without a model. It starts `nsg-pay-mcp` with the world's `agent.env`, speaks MCP to it as a host does, prints each answer, and fails unless they are `paid`, `refused (receiver_not_allowed)` and `pending (above_threshold)`. The held request expires in 15 minutes, so a rehearsal leaves nothing behind. Its output has this shape (the answers are `pay`'s, [Agent integration](agent-integration.md#the-answers)):
+The demo video shows `scripts/demo-scene.sh 3`, which makes these three calls without a model. It starts `nsg-pay-mcp` with the world's `agent.env`, speaks MCP to it as a host does, prints each answer, and fails unless they are `paid`, `refused (receiver_not_allowed)` and `pending (above_threshold)`. The held request expires in 15 minutes, so a rehearsal leaves nothing behind. Its output has this shape (the answers are `pay`'s, [Agent integration](agent-integration.md#the-answers)):
 
 ```
 > pay 5 TST to api.<prefix>-demo.testnet
@@ -81,7 +81,7 @@ scene 3: paid, refused, pending, as DEMO.md has it
 
 `<dir>` defaults to `~/.config/near-spend-guard/testnet`, which [`scripts/deploy-testnet.sh`](../scripts/deploy-testnet.sh) writes ([Deploy](deploy.md)). Without one it stops with `<dir> has no demo world: run scripts/deploy-testnet.sh <prefix> (or scripts/local-node.sh <dir>)`.
 
-For the video, Claude Code takes the host's place:
+With a model instead, Claude Code takes the host's place, with `pay` as its only tool (request 4 in the [README's testnet table](../README.md#on-testnet) came from this):
 
 ```bash
 scripts/local-agent.sh ~/.config/near-spend-guard/testnet "Pay the 5 TST invoice for 1,000 API calls: 5 TST to api.nsg2-demo.testnet, TST is the token at tst.nsg2-demo.testnet."
